@@ -92,25 +92,94 @@ class PixelCNN(tf.keras.Model):
         print(input_shape)
         super().build(input_shape)
 
-    def call(self, inputs, training=True):
-        # Initial layers:
+def model(inputs, num_filters, num_layers, training=True, variables=None):
+    # Initial layers:
 
-        u = self.down_shift(self.offset_initial_upper_feed(inputs))
-        ul = self.down_shift(self.offset_initial_narrow_upper_feed(inputs)) \
-            + self.right_shift(self.offset_initial_narrow_right_feed(inputs))
+    u = nn.shift_layer(nn.shift_conv_2D(
+        inputs,
+        filters = num_filters,
+        kernel_size = (2, 3),
+        strides = (1, 1),
+        shift_types = ["down"],
+        variables = variables
+    ), y_shift = 1, variables = variables)
+    ul = nn.shift_layer(nn.shift_conv_2D(
+        inputs,
+        filters = num_filters,
+        kernel_size = (1, 3),
+        strides = (1, 1),
+        shift_types = ["down"],
+        variables = variables
+    ), y_shift = 1, variables = variables) \
+        + nn.shift_layer(nn.shift_conv_2D(
+        inputs,
+        filters = num_filters,
+        kernel_size = (2, 1),
+        strides = (1, 1),
+        shift_types = ["down", "right"],
+        variables = variables
+    ), x_shift = 1, variables = variables)
 
-        # normal pass
-        for merge, upl, uprl in zip(self.merge_feed, self.upward_feed, self.upright_feed):
-            u = upl(u)
-            ul = merge([uprl(ul), u])
+    # normal pass
+    # for merge, upl, uprl in zip(self.merge_feed, self.upward_feed, self.upright_feed):
+    for i in range(num_layers):
+        u = nn.shift_conv_2D(
+            u,
+            filters = num_filters,
+            kernel_size = (2, 3),
+            strides = (2, 2),
+            shift_types = ["down"],
+            variables = variables
+        )
+        ul = nn.skip_layer(
+            x = nn.shift_conv_2D(
+                ul,
+                filters = num_filters,
+                kernel_size = (2, 2),
+                strides = (2, 2),
+                shift_types = ["down","right"],
+                variables = variables
+            ),
+            y = u,
+            nonlinearity = tf.nn.relu,
+            conv = None,
+            variables = variables
+        )
 
-        # transpose pass
-        for merge, upl, uprl in zip(self.t_merge_feed, self.t_upward_feed, self.t_upright_feed):
-            u = upl(u)
-            ul = merge([uprl(ul), u])
+    # transpose pass
+    # for merge, upl, uprl in zip(self.t_merge_feed, self.t_upward_feed, self.t_upright_feed):
+    for i in range(num_layers):
+        u = nn.shift_deconv_2D(
+            u,
+            filters = num_filters,
+            kernel_size = (2, 3),
+            strides = (2, 2),
+            shift_types = ["down"],
+            variables = variables
+        )
+        ul = nn.skip_layer(
+            x = nn.shift_deconv_2D(
+                ul,
+                filters = num_filters,
+                kernel_size = (2, 2),
+                strides = (2, 2),
+                shift_types = ["down","right"],
+                variables = variables
+            ),
+            y = u,
+            nonlinearity = tf.nn.relu,
+            conv = None,
+            variables = variables
+        )
 
-        logits = self.final_collapse(ul)
-        return self.final_activation(logits)
+    final_layer = tf.keras.layers.Conv2D(
+        filters = 1,
+        kernel_size = (1, 1) # Network in a network layer
+    )
+    variables += final_layer.variables
+    logits = final_layer(ul)
+
+    return tf.sigmoid(logits)
 
 def pixel_cnn_loss(input, output):
     return tf.losses.sigmoid_cross_entropy(input, output)

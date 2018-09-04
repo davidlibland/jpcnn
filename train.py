@@ -1,13 +1,15 @@
 import tensorflow as tf
 from data import get_dataset, BATCH_SIZE
-from model import PixelCNN, optimizer, pixel_cnn_loss
+from model import model, optimizer, pixel_cnn_loss
 import time
 import numpy as np
 import matplotlib.pyplot as plt
 tf.enable_eager_execution()
 
 
-model = PixelCNN(5, 2)
+# model = PixelCNN(5, 2)
+num_layers = 2
+num_filters = 5
 
 
 # model.compile(loss='binary_crossentropy',
@@ -15,7 +17,7 @@ model = PixelCNN(5, 2)
 #               metrics=['accuracy'])
 
 train_dataset = get_dataset()
-model.build(train_dataset.shape)
+# model.build(train_dataset.shape)
 # print(len(list(iter(train_dataset))))
 
 # x_train and y_train are Numpy arrays --just like in the Scikit-Learn API.
@@ -31,7 +33,7 @@ def generate_and_save_images(model, epoch, test_input):
     predictions = np.zeros_like(test_input.copy())
     for j in range(height):
         for i in range(width):
-            ij_likelihood = model.predict(predictions)[:, j, i, :]
+            ij_likelihood = model(predictions, num_layers = num_layers, num_filters = num_filters)[:, j, i, :]
             # print(ij_likelihood.mean(), ij_likelihood.std())
             ij_sample = np.random.binomial(1, ij_likelihood)
             predictions[:,j,i,:] = ij_sample
@@ -46,6 +48,15 @@ def generate_and_save_images(model, epoch, test_input):
     plt.savefig('image_at_epoch_{:04d}.png'.format(epoch))
     plt.show()
 
+all_params = []
+model = tf.make_template('model', model, variables = all_params)
+x_init = tf.constant(np.random.beta(1,1,[BATCH_SIZE,28,28,1]))
+# run once for data dependent initialization of parameters
+# all_params = []
+# init_pass = model(x_init, num_filters = num_filters, num_layers = num_layers, variables = all_params)
+
+# keep track of moving average
+# all_params = tf.trainable_variables()
 
 def train(dataset, epochs, image_dim):
     noise = np.random.beta(1,1,[16,28,28,1])
@@ -55,17 +66,17 @@ def train(dataset, epochs, image_dim):
         for images in dataset:
 
             with tf.GradientTape() as gr_tape:
-                generated_images = model(images, training = True)
+                generated_images = model(images, training = True, num_layers = num_layers, num_filters = num_filters)
 
                 loss = pixel_cnn_loss(images, generated_images)
 
             gradients = gr_tape.gradient(
                 loss,
-                model.variables
+                all_params
             )
 
             optimizer.apply_gradients(
-                zip(gradients, model.variables)
+                zip(gradients, all_params)
             )
 
         if epoch % 1 == 0:
