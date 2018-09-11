@@ -13,11 +13,9 @@ def get_dataset():
                                         1).astype('float32')
     # We are normalizing the images to the range of [0, 1]
     # train_images = np.zeros_like(train_images[:BATCH_SIZE,:,:,:], dtype = np.int)
-    train_images = np.concatenate([np.zeros([BATCH_SIZE, 14,28,1]), np.ones([BATCH_SIZE, 14,28,1])], axis = 1)
+    train_images = np.concatenate([np.zeros([BATCH_SIZE, 3,4,1], dtype=np.float), np.ones([BATCH_SIZE, 1,4,1], dtype=np.float)], axis = 1)
     # train_images = np.round(train_images / 256).astype(np.int)
-    print(train_images.shape)
-    print(train_images.max(), train_images.min())
 
-    return train_images
-    # return tf.data.Dataset.from_tensor_slices((train_images, train_images)).shuffle(
-    #     BUFFER_SIZE).batch(BATCH_SIZE)
+    # return train_images
+    return tf.data.Dataset.from_tensor_slices(train_images).shuffle(
+        BUFFER_SIZE).batch(BATCH_SIZE)

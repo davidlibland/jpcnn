@@ -8,8 +8,8 @@ tf.enable_eager_execution()
 
 
 # model = PixelCNN(5, 2)
-num_layers = 2
-num_filters = 5
+num_layers = 0
+num_filters = 50
 
 
 # model.compile(loss='binary_crossentropy',
@@ -48,9 +48,9 @@ def generate_and_save_images(model, epoch, test_input):
     plt.savefig('image_at_epoch_{:04d}.png'.format(epoch))
     plt.show()
 
-all_params = []
-model = tf.make_template('model', model, variables = all_params)
-x_init = tf.constant(np.random.beta(1,1,[BATCH_SIZE,28,28,1]))
+# all_params = []
+# model = tf.make_template('model', model, variables = all_params)
+# x_init = tf.constant(np.random.beta(1,1,[BATCH_SIZE,28,28,1]))
 # run once for data dependent initialization of parameters
 # all_params = []
 # init_pass = model(x_init, num_filters = num_filters, num_layers = num_layers, variables = all_params)
@@ -59,24 +59,37 @@ x_init = tf.constant(np.random.beta(1,1,[BATCH_SIZE,28,28,1]))
 # all_params = tf.trainable_variables()
 
 def train(dataset, epochs, image_dim):
-    noise = np.random.beta(1,1,[16,28,28,1])
+    noise = np.random.beta(1,1,[16, image_dim, image_dim, 1])
+    noise = np.zeros([16, image_dim, image_dim, 1], dtype=np.float)
+    container = tf.contrib.eager.EagerVariableStore()
     for epoch in range(epochs):
         start = time.time()
-
+        total_loss = []
         for images in dataset:
 
-            with tf.GradientTape() as gr_tape:
-                generated_images = model(images, training = True, num_layers = num_layers, num_filters = num_filters)
+            with tf.GradientTape() as gr_tape, container.as_default():
+                image_var = tf.contrib.eager.Variable(images)
 
+                generated_images = model(image_var, training = True, num_layers = num_layers, num_filters = num_filters)
+                # y = generated_images[0,2,2,0]
                 loss = pixel_cnn_loss(images, generated_images)
+            total_loss.append(np.array(loss))
+
+            # print(y.shape)
+            # grad = gr_tape.gradient(
+            #     generated_images,
+            #     image_var
+            # )
+            # print(grad.shape)
+            # print(np.array(grad[0,:,:,0]))
 
             gradients = gr_tape.gradient(
                 loss,
-                all_params
+                container.trainable_variables()
             )
 
             optimizer.apply_gradients(
-                zip(gradients, all_params)
+                zip(gradients, container.trainable_variables())
             )
 
         if epoch % 1 == 0:
@@ -89,10 +102,11 @@ def train(dataset, epochs, image_dim):
         print('Time taken for epoch {} is {} sec'.format(epoch + 1,
                                                       time.time()-start))
 
+        print('Loss for epoch {} is {}'.format(epoch + 1, np.mean(total_loss)))
     # display.clear_output(wait = True)
     generate_and_save_images(model,
                              epochs,
                              noise)
 
-train(train_dataset, 10, 28)
+train(train_dataset, 500, 4)
 
