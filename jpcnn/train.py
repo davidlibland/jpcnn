@@ -10,10 +10,6 @@ tf.enable_eager_execution()
 num_layers = 1
 num_filters = 50
 
-
-train_dataset, image_dim = get_dataset()
-
-
 def generate_and_save_images(model, epoch, test_input, container):
     height = test_input.shape[1]
     width = test_input.shape[2]
@@ -81,4 +77,5 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
 
 
 if __name__ == "__main__":
+    train_dataset, image_dim = get_dataset()
     train(train_dataset, 500, image_dim)
