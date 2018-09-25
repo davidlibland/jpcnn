@@ -1,6 +1,6 @@
 import tensorflow as tf
-from data import get_dataset
-from model import model, optimizer, pixel_cnn_loss
+from jpcnn.data import get_dataset
+from jpcnn.model import model, optimizer, pixel_cnn_loss
 import time
 import numpy as np
 import matplotlib.pyplot as plt

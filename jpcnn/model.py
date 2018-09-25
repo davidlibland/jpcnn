@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.contrib.framework import arg_scope
-import nn
+import jpcnn.nn
 
 
 def model(inputs, num_filters, num_layers, num_resnet=3, dropout_p=0.9, training=True, init=False):

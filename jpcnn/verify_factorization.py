@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from itertools import product
 tf.enable_eager_execution()
-from model import model
+from jpcnn.model import model
 
 
 image_dim = 4
