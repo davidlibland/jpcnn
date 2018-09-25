@@ -8,7 +8,7 @@ from jpcnn.image_utils import display_images
 BUFFER_SIZE = 60000
 BATCH_SIZE = 256
 
-def get_dataset(basic_test_data = False):
+def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False):
     global BUFFER_SIZE
     if basic_test_data:
         train_images = np.concatenate([np.zeros([BATCH_SIZE, 3,4,1], dtype=np.float), np.ones([BATCH_SIZE, 1,4,1], dtype=np.float)], axis = 1)
