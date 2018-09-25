@@ -8,14 +8,16 @@ from jpcnn.image_utils import display_images
 BUFFER_SIZE = 60000
 BATCH_SIZE = 256
 
-def get_dataset():
+def get_dataset(basic_test_data = False):
     global BUFFER_SIZE
-    train_images = np.concatenate([np.zeros([BATCH_SIZE, 3,4,1], dtype=np.float), np.ones([BATCH_SIZE, 1,4,1], dtype=np.float)], axis = 1)
-    # (train_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
-    # train_images = train_images.reshape(train_images.shape[0], 28, 28,
-    #                                     1).astype('float32')[train_labels==0,:,:,:]
-    # # We are normalizing the images to the range of [0, 1]
-    # train_images = np.round(train_images / 256).astype(np.float)
+    if basic_test_data:
+        train_images = np.concatenate([np.zeros([BATCH_SIZE, 3,4,1], dtype=np.float), np.ones([BATCH_SIZE, 1,4,1], dtype=np.float)], axis = 1)
+    else:
+        (train_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
+        train_images = train_images.reshape(train_images.shape[0], 28, 28,
+                                            1).astype('float32')[train_labels==0,:,:,:]
+        # We are normalizing the images to the range of [0, 1]
+        train_images = np.round(train_images / 256).astype(np.float)
     BUFFER_SIZE = train_images.shape[0]
     assert train_images.shape[1] == train_images.shape[2], "Images should be square"
     image_dim = train_images.shape[1]
