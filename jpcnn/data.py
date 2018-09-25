@@ -20,7 +20,6 @@ def get_dataset():
     image_dim = train_images.shape[1]
     print("Buffer size: %d" % BUFFER_SIZE)
     print("Image size: %d" % image_dim)
-    print(train_images[0,:,:,0])
 
     fig = plt.figure(figsize = (4, 4))
 
