@@ -1,16 +1,16 @@
 import tensorflow as tf
-from data import get_dataset, BATCH_SIZE
+from data import get_dataset
 from model import model, optimizer, pixel_cnn_loss
 import time
 import numpy as np
 import matplotlib.pyplot as plt
 tf.enable_eager_execution()
 
-num_layers = 0
+num_layers = 1
 num_filters = 50
 
 
-train_dataset = get_dataset()
+train_dataset, image_dim = get_dataset()
 
 
 def generate_and_save_images(model, epoch, test_input, container):
@@ -37,6 +37,7 @@ def generate_and_save_images(model, epoch, test_input, container):
 
 
 def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_filters):
+    print("image dim: %s " % image_dim)
     noise = np.random.beta(1,1,[16, image_dim, image_dim, 1])
     container = tf.contrib.eager.EagerVariableStore()
 
@@ -87,4 +88,4 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
 
 
 if __name__ == "__main__":
-    train(train_dataset, 500, 28)
+    train(train_dataset, 500, image_dim)

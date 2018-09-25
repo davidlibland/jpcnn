@@ -14,7 +14,7 @@ def get_name(layer_name: str, counters: dict):
     return name
 
 @add_arg_scope
-def crop2d_layer(x, croppings, counters=None):
+def crop2d_layer(x, croppings, counters=None, init=False):
     xshape = list(map(int, x.get_shape()))
     ty = croppings[0][0]
     by = croppings[0][1]
@@ -24,13 +24,13 @@ def crop2d_layer(x, croppings, counters=None):
     return x[:, ty: xshape[1]-by, lx: xshape[2] - rx, :]
 
 @add_arg_scope
-def pad2d_layer(x, paddings, mode="CONSTANT", counters=None):
+def pad2d_layer(x, paddings, mode="CONSTANT", counters=None, init=False):
     paddings = list(map(list, paddings))
     return tf.pad(x, [[0, 0]] + paddings + [[0, 0]], mode=mode)
 
 
 @add_arg_scope
-def shift_layer(x, x_shift=0, y_shift=0, counters=None):
+def shift_layer(x, x_shift=0, y_shift=0, counters=None, init=False):
     nx, px = max(-x_shift, 0), max(x_shift, 0)
     ny, py = max(-y_shift, 0), max(y_shift, 0)
 
@@ -139,7 +139,7 @@ def nin_layer(x, num_units, **kwargs):
 
 
 @add_arg_scope
-def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3):
+def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=False):
     """A batch normalization layer"""
     name = get_name('batch_norm', counters)
     with tf.variable_scope(name):
@@ -161,9 +161,9 @@ def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, drop
     x_shape = list(map(int, x.get_shape()))
     num_filters = x_shape[-1]
 
-    y1 = conv(nonlinearity(x), num_filters, counters = counters)
+    y1 = conv(nonlinearity(x), num_filters)
     if a is not None:  # Add short cut connections:
-        y1 += nin_layer(nonlinearity(a), num_filters, counters = counters)
+        y1 += nin_layer(nonlinearity(a), num_filters)
     y1 = nonlinearity(y1)
     # Do dropout here
     y2 = conv(y1, num_filters * 2)
@@ -176,7 +176,7 @@ def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, drop
 
 
 @add_arg_scope
-def shift_conv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None, counters=None):
+def shift_conv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None, counters=None, init=False):
     if shift_types is None:
         shift_types = []
     if "down" in shift_types:
@@ -192,15 +192,15 @@ def shift_conv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None, cou
     else:
         pad_x = (int((kernel_size[1]-1)/2), int((kernel_size[1]-1)/2))
 
-    pad_x = pad2d_layer(x, paddings=[pad_y, pad_x], mode="CONSTANT", counters = counters)
-    conv_x = conv_layer(pad_x, filters, kernel_size, strides, pad="VALID", counters = counters)
+    pad_x = pad2d_layer(x, paddings=[pad_y, pad_x], mode="CONSTANT")
+    conv_x = conv_layer(pad_x, filters, kernel_size, strides, pad="VALID")
 
     return conv_x
 
 
 @add_arg_scope
 def shift_deconv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None,
-                    counters=None):
+                    counters=None, init=False):
     if shift_types is None:
         shift_types = []
     if "down" in shift_types:
@@ -215,18 +215,20 @@ def shift_deconv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None,
         crop_x = (kernel_size[1]-1, 0)
     else:
         crop_x = (int((kernel_size[1]-1)/2), int((kernel_size[1]-1)/2))
-    deconv_x = deconv_layer(x, filters, kernel_size, strides, pad="VALID", counters=counters)
+    deconv_x = deconv_layer(x, filters, kernel_size, strides, pad="VALID")
     crop_x = crop2d_layer(deconv_x, croppings=(crop_y, crop_x))
 
     return crop_x
 
 
 @add_arg_scope
-def skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None):
+def skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, dropout_p=0.9):
     if nonlinearity is not None:
         x = nonlinearity(x)
     xshape = list(map(int, x.get_shape()))
+    if dropout_p > 0:
+        x = tf.nn.dropout(x, keep_prob=1. - dropout_p)
     ynl = nonlinearity(y)
-    c2 = nin_layer(ynl, xshape[-1], counters=counters)
+    c2 = nin_layer(ynl, xshape[-1])
 
     return x + c2
