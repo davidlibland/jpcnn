@@ -10,6 +10,7 @@ tf.enable_eager_execution()
 num_layers = 1
 num_filters = 50
 
+
 def generate_and_save_images(model, epoch, test_input, container):
     height = test_input.shape[1]
     width = test_input.shape[2]
@@ -17,7 +18,7 @@ def generate_and_save_images(model, epoch, test_input, container):
     for j in range(height):
         for i in range(width):
             with container.as_default():
-                ij_likelihood = model(predictions, num_layers = num_layers, num_filters = num_filters)[:, j, i, :]
+                ij_likelihood = model(predictions)[:, j, i, :]
             # print(ij_likelihood.mean(), ij_likelihood.std())
             ij_sample = np.random.binomial(1, ij_likelihood)
             predictions[:,j,i,:] = ij_sample
@@ -61,7 +62,13 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
 
         if epoch % 1 == 0:
             # display.clear_output(wait=True)
-            generate_and_save_images(model, epoch + 1, noise, container)
+            generate_and_save_images(
+                lambda pred: model(pred, num_layers = num_layers,
+                                   num_filters = num_filters),
+                epoch + 1,
+                noise,
+                container
+            )
 
         # if (epoch + 1) % 15 == 0:
         #     checkpoint.save(file_prefix = checkpoint_prefix)
@@ -71,6 +78,15 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
 
         print('Loss for epoch {} is {}'.format(epoch + 1, np.mean(total_loss)))
     # display.clear_output(wait = True)
-    generate_and_save_images(model,
-                             epochs,
-                             noise, container)
+    generate_and_save_images(
+        lambda pred: model(pred, num_layers = num_layers,
+                           num_filters = num_filters),
+        epochs,
+        noise, 
+        container
+    )
+
+
+if __name__ == "__main__":
+    train_dataset, image_dim = get_dataset()
+    train(train_dataset, 500, image_dim)
