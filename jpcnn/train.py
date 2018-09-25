@@ -1,9 +1,10 @@
 import tensorflow as tf
 from jpcnn.data import get_dataset
+from jpcnn.image_utils import display_images
 from jpcnn.model import model, optimizer, pixel_cnn_loss
 import time
 import numpy as np
-import matplotlib.pyplot as plt
+
 tf.enable_eager_execution()
 
 num_layers = 1
@@ -25,15 +26,7 @@ def generate_and_save_images(model, epoch, test_input, container):
             ij_sample = np.random.binomial(1, ij_likelihood)
             predictions[:,j,i,:] = ij_sample
 
-    fig = plt.figure(figsize = (4, 4))
-
-    for i in range(predictions.shape[0]):
-        plt.subplot(4, 4, i+1)
-        plt.imshow(predictions[i, :, :, 0], cmap='gray')
-        plt.axis('off')
-
-    plt.savefig('image_at_epoch_{:04d}.png'.format(epoch))
-    plt.show()
+    display_images('image_at_epoch_{:04d}.png'.format(epoch), predictions[:,:,:,0])
 
 
 def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_filters):
