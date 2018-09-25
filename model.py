@@ -7,6 +7,7 @@ def model(inputs, num_filters, num_layers, num_resnet=3, training=True, init=Fal
     # Initial layers:
     counters = {}
     with arg_scope([nn.conv_layer, nn.deconv_layer, nn.gated_resnet, nn.dense_layer], counters=counters, init=init):
+        inputs = tf.pad(inputs, [[0,0],[0,0],[0,0],[0,1]], "CONSTANT", constant_values=1)  # add channel of ones to distinguish image from padding later on
         u = nn.shift_layer(nn.shift_conv_2D(
             inputs,
             filters = num_filters,

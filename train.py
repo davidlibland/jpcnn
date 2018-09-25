@@ -16,7 +16,7 @@ train_dataset = get_dataset()
 def generate_and_save_images(model, epoch, test_input, container):
     height = test_input.shape[1]
     width = test_input.shape[2]
-    predictions = np.zeros_like(test_input.copy())
+    predictions = np.zeros_like(test_input)
     for j in range(height):
         for i in range(width):
             with container.as_default():
@@ -36,7 +36,7 @@ def generate_and_save_images(model, epoch, test_input, container):
     plt.show()
 
 
-def train(dataset, epochs, image_dim):
+def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_filters):
     noise = np.random.beta(1,1,[16, image_dim, image_dim, 1])
     container = tf.contrib.eager.EagerVariableStore()
 
@@ -85,5 +85,6 @@ def train(dataset, epochs, image_dim):
                              epochs,
                              noise, container)
 
-train(train_dataset, 500, 28)
 
+if __name__ == "__main__":
+    train(train_dataset, 500, 28)
