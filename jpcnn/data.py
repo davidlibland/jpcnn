@@ -11,7 +11,7 @@ BATCH_SIZE = 256
 def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False):
     global BUFFER_SIZE
     if basic_test_data:
-        train_images = np.concatenate([np.zeros([BATCH_SIZE, 3,4,1], dtype=np.float), np.ones([BATCH_SIZE, 1,4,1], dtype=np.float)], axis = 1)
+        train_images = np.concatenate([np.zeros([batch_size, 3,4,1], dtype=np.float), np.ones([batch_size, 1,4,1], dtype=np.float)], axis = 1)
     else:
         (train_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
         train_images = train_images.reshape(train_images.shape[0], 28, 28,
@@ -28,5 +28,5 @@ def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False):
 
     # return train_images
     return (tf.data.Dataset.from_tensor_slices(train_images).shuffle(
-        BUFFER_SIZE).batch(BATCH_SIZE),
+        BUFFER_SIZE).batch(batch_size),
             image_dim)
