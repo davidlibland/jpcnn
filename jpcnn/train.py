@@ -88,5 +88,5 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
 
 
 if __name__ == "__main__":
-    train_dataset, image_dim = get_dataset()
+    train_dataset, image_dim = get_dataset(basic_test_data = True)
     train(train_dataset, 500, image_dim)

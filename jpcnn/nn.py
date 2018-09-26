@@ -165,8 +165,9 @@ def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, drop
     if a is not None:  # Add short cut connections:
         y1 += nin_layer(nonlinearity(a), num_filters)
     y1 = nonlinearity(y1)
-    # Do dropout here
-    y2 = conv(y1, num_filters * 2)
+    if dropout_p > 0:
+        y1 = tf.nn.dropout(y1, keep_prob=1. - dropout_p)
+    y2 = conv(y1, num_filters * 2, init_scale=0.1)
 
     # Add extra conditioning here, perhaps
 
@@ -226,9 +227,6 @@ def skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, d
     if nonlinearity is not None:
         x = nonlinearity(x)
     xshape = list(map(int, x.get_shape()))
-    if dropout_p > 0:
-        x = tf.nn.dropout(x, keep_prob=1. - dropout_p)
-    ynl = nonlinearity(y)
-    c2 = nin_layer(ynl, xshape[-1])
+    c2 = nin_layer(y, xshape[-1], nonlinearity=nonlinearity)
 
     return x + c2

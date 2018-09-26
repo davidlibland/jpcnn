@@ -111,7 +111,7 @@ venv.bak/
 dmypy.json
 
 # images
-image_at_epoch_*.png
+*image_at_epoch_*.png
 
 # ide
 .idea
