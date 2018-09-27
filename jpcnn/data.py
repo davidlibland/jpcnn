@@ -24,7 +24,7 @@ test_data = np.array([
     [1, 0, 0, 1],
     [0, 1, 1, 0]
 ], dtype=np.float)
-# zero:
+# zero: nl=2, nr=2, nf=32, lr=1e-4
 test_data = np.array([
     [1, 1, 1, 1, 1, 1],
     [1, 1, 0, 0, 1, 1],
