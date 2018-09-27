@@ -1,7 +1,7 @@
 import tensorflow as tf
 from jpcnn.data import get_dataset
 from jpcnn.image_utils import display_images
-from jpcnn.model import model, optimizer, pixel_cnn_loss
+from jpcnn.model import model, pixel_cnn_loss
 import time
 import numpy as np
 
@@ -10,6 +10,7 @@ tf.enable_eager_execution()
 num_layers = 1
 num_filters = 50
 num_resnet = 1
+lr = 1e-3
 
 
 def generate_and_save_images(model, epoch, test_input, container):
@@ -27,9 +28,10 @@ def generate_and_save_images(model, epoch, test_input, container):
     display_images('image_at_epoch_{:04d}.png'.format(epoch), predictions[:,:,:,0])
 
 
-def train(dataset, epochs, image_dim, num_filters=num_filters, num_layers=num_layers, num_resnet=num_resnet):
+def train(dataset, epochs, image_dim, num_filters=num_filters, num_layers=num_layers, num_resnet=num_resnet, lr=lr):
     print("image dim: %s " % image_dim)
     noise = np.random.beta(1,1,[16, image_dim, image_dim, 1])
+    optimizer = tf.train.AdamOptimizer(lr)
     container = tf.contrib.eager.EagerVariableStore()
 
     # Data dependent initialization:

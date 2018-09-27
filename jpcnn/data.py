@@ -8,10 +8,37 @@ from jpcnn.image_utils import display_images
 BUFFER_SIZE = 60000
 BATCH_SIZE = 256
 
+# Horizontal white line: nl=1, nr=1, nf=50, lr=1e-2
+test_data = np.concatenate([np.zeros([3,4], dtype=np.float), np.ones([1,4], dtype=np.float)], axis = 0)
+# diagonal line: nl=1, nr=1, nf=50, lr=1e-2
+test_data = np.array([
+    [0, 1, 1, 1],
+    [1, 0, 1, 1],
+    [1, 1, 0, 1],
+    [1, 1, 1, 0]
+], dtype=np.float)
+# small zero: nl=1, nr=1, nf=50, lr=1e-2
+test_data = np.array([
+    [0, 1, 1, 0],
+    [1, 0, 0, 1],
+    [1, 0, 0, 1],
+    [0, 1, 1, 0]
+], dtype=np.float)
+# zero:
+test_data = np.array([
+    [1, 1, 1, 1, 1, 1],
+    [1, 1, 0, 0, 1, 1],
+    [1, 0, 1, 1, 0, 1],
+    [1, 0, 1, 1, 0, 1],
+    [1, 1, 0, 0, 1, 1],
+    [1, 1, 1, 1, 1, 1],
+], dtype=np.float)
+
 def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False):
     global BUFFER_SIZE
     if basic_test_data:
-        train_images = np.concatenate([np.zeros([batch_size, 3,4,1], dtype=np.float), np.ones([batch_size, 1,4,1], dtype=np.float)], axis = 1)
+        train_images = np.stack([test_data]*batch_size, axis = 0)
+        train_images = np.expand_dims(train_images, 3)
     else:
         (train_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
         train_images = train_images.reshape(train_images.shape[0], 28, 28,

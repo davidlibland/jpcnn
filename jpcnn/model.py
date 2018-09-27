@@ -124,5 +124,3 @@ def model(inputs, num_filters, num_layers, num_resnet=1, dropout_p=0.9, training
 
 def pixel_cnn_loss(input, output):
     return tf.losses.sigmoid_cross_entropy(input, output)
-
-optimizer = tf.train.AdamOptimizer(1e-2)
