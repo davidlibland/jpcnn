@@ -9,6 +9,7 @@ tf.enable_eager_execution()
 
 num_layers = 1
 num_filters = 50
+num_resnet = 1
 
 
 def generate_and_save_images(model, epoch, test_input, container):
@@ -26,7 +27,7 @@ def generate_and_save_images(model, epoch, test_input, container):
     display_images('image_at_epoch_{:04d}.png'.format(epoch), predictions[:,:,:,0])
 
 
-def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_filters):
+def train(dataset, epochs, image_dim, num_filters=num_filters, num_layers=num_layers, num_resnet=num_resnet):
     print("image dim: %s " % image_dim)
     noise = np.random.beta(1,1,[16, image_dim, image_dim, 1])
     container = tf.contrib.eager.EagerVariableStore()
@@ -36,7 +37,7 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
         with container.as_default():
             image_var = tf.contrib.eager.Variable(images)
             model(image_var, training = True, num_layers = num_layers,
-                  num_filters = num_filters, init = True)
+                  num_filters = num_filters, num_resnet = num_resnet, init = True)
 
     for epoch in range(epochs):
         start = time.time()
@@ -46,7 +47,7 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
             with tf.GradientTape() as gr_tape, container.as_default():
                 image_var = tf.contrib.eager.Variable(images)
 
-                generated_images = model(image_var, training = True, num_layers = num_layers, num_filters = num_filters)
+                generated_images = model(image_var, training = True, num_layers = num_layers, num_filters = num_filters, num_resnet=num_resnet)
 
                 loss = pixel_cnn_loss(images, generated_images)
             total_loss.append(np.array(loss))
@@ -64,7 +65,7 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
             # display.clear_output(wait=True)
             generate_and_save_images(
                 lambda pred: model(pred, num_layers = num_layers,
-                                   num_filters = num_filters),
+                                   num_filters = num_filters, num_resnet=num_resnet),
                 epoch + 1,
                 noise,
                 container
@@ -80,7 +81,7 @@ def train(dataset, epochs, image_dim, num_layers=num_layers, num_filters=num_fil
     # display.clear_output(wait = True)
     generate_and_save_images(
         lambda pred: model(pred, num_layers = num_layers,
-                           num_filters = num_filters),
+                           num_filters = num_filters, num_resnet=num_resnet),
         epochs,
         noise, 
         container

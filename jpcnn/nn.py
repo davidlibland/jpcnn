@@ -144,9 +144,7 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
     name = get_name('batch_norm', counters)
     with tf.variable_scope(name):
         xshape = list(map(int, x.get_shape()))
-        print(xshape)
         x_flatshape = [xshape[0], np.prod(xshape[1:])]
-        print(x_flatshape)
         x_flat = tf.reshape(x, x_flatshape)
         batch_mean, batch_var = tf.nn.moments(x_flat, [0], name=name)
         scale = tf.get_variable(name="bn_scale", shape=x_flatshape, initializer=tf.constant_initializer(1), dtype=tf.float64)
@@ -161,13 +159,13 @@ def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, drop
     x_shape = list(map(int, x.get_shape()))
     num_filters = x_shape[-1]
 
-    y1 = conv(nonlinearity(x), num_filters)
+    y1 = conv(nonlinearity(x), num_filters=num_filters)
     if a is not None:  # Add short cut connections:
         y1 += nin_layer(nonlinearity(a), num_filters)
     y1 = nonlinearity(y1)
     if dropout_p > 0:
         y1 = tf.nn.dropout(y1, keep_prob=1. - dropout_p)
-    y2 = conv(y1, num_filters * 2, init_scale=0.1)
+    y2 = conv(y1, num_filters = num_filters * 2, init_scale=0.1)
 
     # Add extra conditioning here, perhaps
 
@@ -177,7 +175,7 @@ def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, drop
 
 
 @add_arg_scope
-def shift_conv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None, counters=None, init=False):
+def shift_conv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=None, counters=None, **kwargs):
     if shift_types is None:
         shift_types = []
     if "down" in shift_types:
@@ -194,14 +192,14 @@ def shift_conv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None, cou
         pad_x = (int((kernel_size[1]-1)/2), int((kernel_size[1]-1)/2))
 
     pad_x = pad2d_layer(x, paddings=[pad_y, pad_x], mode="CONSTANT")
-    conv_x = conv_layer(pad_x, filters, kernel_size, strides, pad="VALID")
+    conv_x = conv_layer(pad_x, num_filters, kernel_size, strides, pad= "VALID", **kwargs)
 
     return conv_x
 
 
 @add_arg_scope
-def shift_deconv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None,
-                    counters=None, init=False):
+def shift_deconv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=None,
+                    counters=None, **kwargs):
     if shift_types is None:
         shift_types = []
     if "down" in shift_types:
@@ -216,7 +214,7 @@ def shift_deconv_2D(x, filters, kernel_size, strides=(1, 1), shift_types=None,
         crop_x = (kernel_size[1]-1, 0)
     else:
         crop_x = (int((kernel_size[1]-1)/2), int((kernel_size[1]-1)/2))
-    deconv_x = deconv_layer(x, filters, kernel_size, strides, pad="VALID")
+    deconv_x = deconv_layer(x, num_filters, kernel_size, strides, pad= "VALID", **kwargs)
     crop_x = crop2d_layer(deconv_x, croppings=(crop_y, crop_x))
 
     return crop_x
@@ -230,3 +228,25 @@ def skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, d
     c2 = nin_layer(y, xshape[-1], nonlinearity=nonlinearity)
 
     return x + c2
+
+@add_arg_scope
+def down_shifted_conv2d(x, num_filters, kernel_size=(2, 3), strides=(1, 1), **kwargs):
+    return shift_conv_2D(
+                x,
+                num_filters = num_filters,
+                kernel_size = kernel_size,
+                strides = strides,
+                shift_types = ["down"],
+                **kwargs
+    )
+
+@add_arg_scope
+def down_right_shifted_conv2d(x, num_filters, kernel_size=(2, 2), strides=(1, 1), **kwargs):
+    return shift_conv_2D(
+            x,
+            num_filters = num_filters,
+            kernel_size = kernel_size,
+            strides = strides,
+            shift_types = ["down", "right"],
+            **kwargs
+        )

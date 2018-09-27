@@ -12,7 +12,7 @@ x = tf.constant(noise, dtype=tf.float64)
 counters = {}
 with tf.GradientTape(persistent=True) as g:
   g.watch(x)
-  y = model(x, 50, 2)[0,:,:,0]
+  y = model(x, 50, 2, 0)[0,:,:,0]
   y_s = [(y[i, j], i, j)
          for i in range(image_dim)
          for j in range(image_dim)]
