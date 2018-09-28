@@ -25,14 +25,14 @@ test_data = np.array([
     [0, 1, 1, 0]
 ], dtype=np.float)
 # zero: nl=2, nr=2, nf=32, lr=1e-4
-test_data = np.array([
-    [1, 1, 1, 1, 1, 1],
-    [1, 1, 0, 0, 1, 1],
-    [1, 0, 1, 1, 0, 1],
-    [1, 0, 1, 1, 0, 1],
-    [1, 1, 0, 0, 1, 1],
-    [1, 1, 1, 1, 1, 1],
-], dtype=np.float)
+# test_data = np.array([
+#     [1, 1, 1, 1, 1, 1],
+#     [1, 1, 0, 0, 1, 1],
+#     [1, 0, 1, 1, 0, 1],
+#     [1, 0, 1, 1, 0, 1],
+#     [1, 1, 0, 0, 1, 1],
+#     [1, 1, 1, 1, 1, 1],
+# ], dtype=np.float)
 
 def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False):
     global BUFFER_SIZE
