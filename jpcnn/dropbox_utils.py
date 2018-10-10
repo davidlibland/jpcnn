@@ -184,15 +184,39 @@ def upload(dbx, fullname, folder, subfolder, name, overwrite=False):
             if overwrite
             else dropbox.files.WriteMode.add)
     mtime = os.path.getmtime(fullname)
-    with open(fullname, 'rb') as f:
-        data = f.read()
     def upload_process():
         with _locks[path]:
             try:
-                res = dbx.files_upload(
-                    data, path, mode,
-                    client_modified=datetime.datetime(*time.gmtime(mtime)[:6]),
-                    mute=True)
+                with open(fullname, 'rb') as f:
+                    file_size = os.path.getsize(fullname)
+
+                    CHUNK_SIZE = 512 * 1024
+
+                    if file_size <= CHUNK_SIZE:
+                        res = dbx.files_upload(f.read(), path, mode,
+                            client_modified=datetime.datetime(*time.gmtime(mtime)[:6]),
+                            mute=True)
+
+                    else:
+                        upload_session_start_result = dbx.files_upload_session_start(
+                            f.read(CHUNK_SIZE))
+                        cursor = dropbox.files.UploadSessionCursor(
+                            session_id = upload_session_start_result.session_id,
+                            offset = f.tell())
+                        commit = dropbox.files.CommitInfo(path = path, mode=mode,
+                            client_modified=datetime.datetime(*time.gmtime(mtime)[:6]),
+                            mute=True)
+
+                        while f.tell() < file_size:
+                            if ((file_size - f.tell()) <= CHUNK_SIZE):
+                                res = dbx.files_upload_session_finish(f.read(CHUNK_SIZE),
+                                                                cursor,
+                                                                commit)
+                            else:
+                                dbx.files_upload_session_append(f.read(CHUNK_SIZE),
+                                                                cursor.session_id,
+                                                                cursor.offset)
+                                cursor.offset = f.tell()
             except dropbox.exceptions.ApiError as err:
                 print('*** API error with: %s' % name, err)
                 return None
