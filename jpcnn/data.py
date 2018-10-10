@@ -51,7 +51,7 @@ def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False):
     print("Buffer size: %d" % BUFFER_SIZE)
     print("Image size: %d" % image_dim)
 
-    display_images('training_sample.png', train_images[:16,:,:,0])
+    display_images(".", "training_sample.png", train_images[:16,:,:,0])
 
     # return train_images
     return (tf.data.Dataset.from_tensor_slices(train_images).shuffle(

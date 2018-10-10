@@ -8,6 +8,7 @@ class JPCNNConfig:
     num_resnet: int=2
     num_filters: int=64
     lr: float=1e-2
-    epochs: int=500
+    epochs: int=5
     description: str="tmp"
     ckpt_interval: int=1
+    dropbox_root: str="checkpoints"

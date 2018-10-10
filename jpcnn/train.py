@@ -1,3 +1,5 @@
+from functools import reduce
+
 import tensorflow as tf
 from jpcnn.config import JPCNNConfig
 from jpcnn.data import get_dataset
@@ -13,7 +15,7 @@ import numpy as np
 tf.enable_eager_execution()
 
 
-def generate_and_save_images(model, epoch, test_input, container):
+def generate_and_save_images(model, epoch, test_input, container, root_dir):
     height = test_input.shape[1]
     width = test_input.shape[2]
     predictions = np.zeros_like(test_input)
@@ -25,7 +27,7 @@ def generate_and_save_images(model, epoch, test_input, container):
             ij_sample = np.random.binomial(1, ij_likelihood)
             predictions[:,j,i,:] = ij_sample
 
-    display_images('image_at_epoch_{:04d}.png'.format(epoch), predictions[:,:,:,0])
+    display_images(root_dir, 'image_at_epoch_{:04d}.png'.format(epoch), predictions[:,:,:,0])
 
 
 def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
@@ -34,7 +36,10 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
 
-    conf, dir_name = load_or_save_conf(ckpt_file, conf)
+    conf, dir_name, do_sync = load_or_save_conf(ckpt_file, conf)
+    summary_writer = tf.contrib.summary.create_file_writer("{}/logs".format(dir_name), flush_millis = 10000)
+    summary_writer.set_as_default()
+
     # Data dependent initialization:
     for i, images in enumerate(dataset):
         with container.as_default():
@@ -52,8 +57,8 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
     if ckpt_file is not None:
         saver.restore(None, ckpt_file)
     while global_step < conf.epochs:
-        print(global_step)
         global_step.assign_add(1)
+        print("Starting Epoch: {0:d}".format(int(global_step)))
         start = time.time()
         total_loss = []
         for images in dataset:
@@ -67,6 +72,8 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
                                          num_resnet=conf.num_resnet)
 
                 loss = pixel_cnn_loss(images, generated_images)
+            with tf.contrib.summary.always_record_summaries():
+                tf.contrib.summary.scalar("loss", loss)
             total_loss.append(np.array(loss))
 
             gradients = gr_tape.gradient(
@@ -77,6 +84,13 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
             optimizer.apply_gradients(
                 zip(gradients, container.trainable_variables())
             )
+            with tf.contrib.summary.always_record_summaries():
+                def safe_div(x, y):
+                    if x is None:
+                        return 0
+                    return tf.reduce_mean(abs(x) / (abs(y) + 1e-10))
+                rel_grads = list(map(safe_div, gradients, container.trainable_variables()))
+                tf.contrib.summary.histogram("relative gradients", rel_grads)
 
         if int(global_step) % conf.ckpt_interval == 0:
             # display.clear_output(wait=True)
@@ -84,21 +98,23 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
                 lambda pred: model(pred, num_layers=conf.num_layers,
                                    num_filters=conf.num_filters,
                                    num_resnet=conf.num_resnet),
-                global_step,
+                int(global_step),
                 noise,
-                container
+                container,
+                dir_name
             )
             ckpt_name = build_checkpoint_file_name(dir_name, conf.description)
             fp = saver.save(None, ckpt_name, global_step=global_step)
             print("Model Saved at {}".format(fp))
+            do_sync()
 
         # if (epoch + 1) % 15 == 0:
         #     checkpoint.save(file_prefix = checkpoint_prefix)
 
-        print('Time taken for epoch {} is {} sec'.format(global_step,
+        print('Time taken for epoch {} is {} sec'.format(int(global_step),
                                                       time.time()-start))
 
-        print('Loss for epoch {} is {}'.format(global_step, np.mean(total_loss)))
+        print('Loss for epoch {} is {}'.format(int(global_step), np.mean(total_loss)))
     # display.clear_output(wait = True)
     generate_and_save_images(
         lambda pred: model(pred, num_layers=conf.num_layers,
@@ -106,10 +122,11 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
                            num_resnet=conf.num_resnet),
         conf.epochs,
         noise, 
-        container
+        container,
+        dir_name
     )
 
 
 if __name__ == "__main__":
     train_dataset, image_dim = get_dataset(basic_test_data = True)
-    train(train_dataset, JPCNNConfig(image_dim=image_dim), ckpt_file = "Checkpoint-20181003-125436/params_tmp.ckpt-2")
+    train(train_dataset, JPCNNConfig(image_dim=image_dim))
