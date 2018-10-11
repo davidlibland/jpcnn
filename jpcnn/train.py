@@ -1,5 +1,3 @@
-from functools import reduce
-
 import tensorflow as tf
 from jpcnn.config import JPCNNConfig
 from jpcnn.data import get_dataset
@@ -31,8 +29,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir):
 
 
 def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
-    print("image dim: %s " % image_dim)
-    noise = np.random.beta(1,1,[16, image_dim, image_dim, 1])
+    noise = np.random.beta(1,1,[16, conf.image_dim, conf.image_dim, 1])
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
 
@@ -129,4 +126,5 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
 
 if __name__ == "__main__":
     train_dataset, image_dim = get_dataset(basic_test_data = True)
-    train(train_dataset, JPCNNConfig(image_dim=image_dim), ckpt_file = "Checkpoint-20181011-004410/params_tmp.ckpt-15")
+    train(train_dataset, JPCNNConfig(image_dim=image_dim))
+    # train(train_dataset, JPCNNConfig(image_dim=image_dim), ckpt_file = "Checkpoint-20181011-004410/params_tmp.ckpt-15")
