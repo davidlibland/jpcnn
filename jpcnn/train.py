@@ -129,4 +129,4 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
 
 if __name__ == "__main__":
     train_dataset, image_dim = get_dataset(basic_test_data = True)
-    train(train_dataset, JPCNNConfig(image_dim=image_dim))
+    train(train_dataset, JPCNNConfig(image_dim=image_dim), ckpt_file = "Checkpoint-20181011-004410/params_tmp.ckpt-15")
