@@ -87,7 +87,7 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
                         return 0
                     return tf.reduce_mean(abs(x) / (abs(y) + 1e-10))
                 rel_grads = list(map(safe_div, gradients, container.trainable_variables()))
-                tf.contrib.summary.histogram("relative gradients", rel_grads)
+                tf.contrib.summary.histogram("relative_gradients", rel_grads)
 
         if int(global_step) % conf.ckpt_interval == 0:
             # display.clear_output(wait=True)
