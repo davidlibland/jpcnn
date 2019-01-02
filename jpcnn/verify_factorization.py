@@ -8,7 +8,7 @@ from jpcnn.model import model
 image_dim = 4
 noise = np.random.beta(1,1,[16, image_dim, image_dim, 1])
 
-x = tf.constant(noise, dtype=tf.float64)
+x = tf.constant(noise, dtype=tf.float32)
 counters = {}
 with tf.GradientTape(persistent=True) as g:
   g.watch(x)

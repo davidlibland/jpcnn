@@ -29,7 +29,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir):
 
 
 def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
-    noise = np.random.beta(1,1,[16, conf.image_dim, conf.image_dim, 1])
+    noise = np.random.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
 

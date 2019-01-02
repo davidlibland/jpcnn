@@ -47,9 +47,9 @@ def conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=No
     strides=tuple(strides)
     with tf.variable_scope(name):
         xshape = list(map(int, x.get_shape()))
-        V = tf.get_variable(name = "V", shape = kernel_size + (xshape[-1], num_filters), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float64)
-        g = tf.get_variable(name = "g", shape = [num_filters], initializer=tf.constant_initializer(1.), dtype=tf.float64)
-        b = tf.get_variable(name = "b", shape = [num_filters], initializer=tf.constant_initializer(0.), dtype=tf.float64)
+        V = tf.get_variable(name = "V", shape = kernel_size + (xshape[-1], num_filters), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
+        g = tf.get_variable(name = "g", shape = [num_filters], initializer=tf.constant_initializer(1.), dtype=tf.float32)
+        b = tf.get_variable(name = "b", shape = [num_filters], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 
         # use weight normalization (Salimans & Kingma, 2016)
         W = tf.reshape(g, [1, 1, 1, num_filters]) * tf.nn.l2_normalize(V, [0, 1, 2])
@@ -80,9 +80,9 @@ def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=
         output_shape = [xshape[0], xshape[1]*strides[0] + kernel_size[0]-1, xshape[2]*strides[1] + kernel_size[1]-1, num_filters]
     with tf.variable_scope(name):
         xshape = list(map(int, x.get_shape()))
-        V = tf.get_variable(name = "V", shape = kernel_size + (num_filters, xshape[-1]), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float64)
-        g = tf.get_variable(name = "g", shape = [num_filters], initializer=tf.constant_initializer(1.), dtype=tf.float64)
-        b = tf.get_variable(name = "b", shape = [num_filters], initializer=tf.constant_initializer(0.), dtype=tf.float64)
+        V = tf.get_variable(name = "V", shape = kernel_size + (num_filters, xshape[-1]), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
+        g = tf.get_variable(name = "g", shape = [num_filters], initializer=tf.constant_initializer(1.), dtype=tf.float32)
+        b = tf.get_variable(name = "b", shape = [num_filters], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 
         # use weight normalization (Salimans & Kingma, 2016)
         W = tf.reshape(g, [1, 1, num_filters, 1]) * tf.nn.l2_normalize(V, [0, 1, 3])
@@ -109,9 +109,9 @@ def dense_layer(x, num_units, nonlinearity=None, counters=None, init=False, init
     name = get_name('dense', counters)
     with tf.variable_scope(name):
         xshape = list(map(int, x.get_shape()))
-        V = tf.get_variable(name = "V", shape = [xshape[1], num_units], initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float64)
-        g = tf.get_variable(name = "g", shape = [num_units], initializer=tf.constant_initializer(1.), dtype=tf.float64)
-        b = tf.get_variable(name = "b", shape = [num_units], initializer=tf.constant_initializer(0.), dtype=tf.float64)
+        V = tf.get_variable(name = "V", shape = [xshape[1], num_units], initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
+        g = tf.get_variable(name = "g", shape = [num_units], initializer=tf.constant_initializer(1.), dtype=tf.float32)
+        b = tf.get_variable(name = "b", shape = [num_units], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 
         # use weight normalization (Salimans & Kingma, 2016)
         x = tf.matmul(x, V)
@@ -147,8 +147,8 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
         x_flatshape = [xshape[0], np.prod(xshape[1:])]
         x_flat = tf.reshape(x, x_flatshape)
         batch_mean, batch_var = tf.nn.moments(x_flat, [0], name=name)
-        scale = tf.get_variable(name="bn_scale", shape=x_flatshape, initializer=tf.constant_initializer(1), dtype=tf.float64)
-        beta = tf.get_variable(name="bn_offset", shape=x_flatshape, initializer=tf.constant_initializer(1), dtype=tf.float64)
+        scale = tf.get_variable(name="bn_scale", shape=x_flatshape, initializer=tf.constant_initializer(1), dtype=tf.float32)
+        beta = tf.get_variable(name="bn_offset", shape=x_flatshape, initializer=tf.constant_initializer(1), dtype=tf.float32)
         bn_x = tf.nn.batch_normalization(x_flat, batch_mean, batch_var, beta,
                                         scale, bn_epsilon)
         return tf.reshape(bn_x, xshape)
