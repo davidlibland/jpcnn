@@ -250,3 +250,65 @@ def down_right_shifted_conv2d(x, num_filters, kernel_size=(2, 2), strides=(1, 1)
             shift_types = ["down", "right"],
             **kwargs
         )
+
+
+def sample_from_discretized_mix_logistic(x, num_mixtures, discretization_scale):
+    """
+    We represent a mixture of logistics as a 1-dim array whose
+    length is divisible by 3: An array of the form
+        [p_1, ..., p_n, m_1, ..., m_n, log(s_1), ..., log(s_n)]
+
+    parametrizes the distribution:
+        x_j -> sum_i p_i* logistic_pdf((x-m)/s)/s
+    where logisitic_pdf(y)=0.25*sech(y/s) is the pdf of the
+    centered logistic distribution function,
+    here the index i ranges from offset[j] to offset[j] + num_mixtures[j]
+    where offset[j] = sum(num_mixtures[:j])
+
+    num_mixtures is a list of positive integers each indicating the number of
+    mixtures in the corresponding output.
+    """
+    xshape = list(map(int, x.get_shape()))
+    num_logistics = xshape[-1] // 3 # 2 params for each logistic + 1 mixture
+
+    # First we sample the softmax indicators:
+    softmax_indices = sample_multinomials(x[...,:num_logistics], num_mixtures)
+    logistic_means = tf.batch_gather(
+        params = x[..., num_logistics: 2*num_logistics],
+        indices = softmax_indices,
+    )
+    logistic_scales = tf.exp(tf.batch_gather(
+        params = x[..., 2*num_logistics:],
+        indices = softmax_indices,
+    ))
+    u = tf.random_uniform(logistic_means.get_shape(),
+                          minval=1e-5, maxval=1. - 1e-5)
+    smooth_x = logistic_means + logistic_scales*(tf.log(u) - tf.log(1. - u))
+    # discretize (todo)
+    return smooth_x
+
+
+def sample_multinomials(logit_probs, num_multinomials):
+    """Samples from sequence of multinomial distributions, num_multinomials
+    is a list of integers indicating the size of each multinomial set.
+
+    For instance to sample from a binomial and trinomial distribution with
+    logit probs (2, -1), and (1, 1, 2), respectively, one would call:
+    sample_multinomials([2, -1, 1, 1, 2], [2, 3])
+    """
+    uniform_samples = tf.random_uniform(
+        logit_probs.get_shape(),
+        minval = 1e-5,
+        maxval = 1. - 1e-5
+    )
+    all_gumbel_samples = logit_probs - tf.log(-tf.log(uniform_samples))
+    split_gumbel_samples = tf.split(all_gumbel_samples, num_multinomials, axis=-1)
+    print([0]+num_multinomials[:-1])
+    offsets = tf.cast(tf.scan(
+        lambda a, x: a + x,
+        tf.concat([[0]+num_multinomials[:-1]], axis=0)
+    ), dtype=tf.int32)
+    indices = [tf.cast(tf.argmax(gumbel_samples, axis=-1), tf.int32) + offset
+               for offset, gumbel_samples in zip(offsets, split_gumbel_samples)]
+    return tf.stack(indices, axis=-1)
+
