@@ -252,7 +252,36 @@ def down_right_shifted_conv2d(x, num_filters, kernel_size=(2, 2), strides=(1, 1)
         )
 
 
-def sample_from_discretized_mix_logistic(x, num_mixtures, discretization_scale):
+def discretized_mix_logistic_loss(x, l, mixture_sizes):
+    # ToDo: add discretization w/ control of granularity
+    xshape = list(map(int, x.get_shape()))
+    lshape = list(map(int, l.get_shape()))
+    assert xshape[:-1] == lshape[:-1], \
+        "Target shape must be compatible with shape of distribution params."
+    num_logistics = xshape[-1] // 3  # 2 params for each logistic + 1 mix param
+    logit_probs = x[...,:num_logistics]
+    means = x[..., num_logistics: 2*num_logistics]
+    log_scales = x[..., num_logistics: 2*num_logistics]
+    target_indices = [i for j, l in enumerate(mixture_sizes) for i in [j]*l]
+    component_targets = tf.gather(l, target_indices, axis=-1)
+    centered_targets = component_targets - means
+    inv_scale = tf.exp(-log_scales)
+    normalized_targets_m = (centered_targets - 0.5) * inv_scale
+    normalized_targets_p = (centered_targets + 0.5) * inv_scale
+    cdf_m = tf.nn.sigmoid(normalized_targets_m)
+    cdf_p = tf.nn.sigmoid(normalized_targets_p)
+    target_prob = cdf_p - cdf_m  # Note: difference could be numerically unstable
+
+    mixture_log_probs = logit_probs + tf.log(target_prob)
+    stacked = tf.stack([mixture_log_probs, logit_probs], axis = -1)
+    components = tf.split(stacked, mixture_sizes, axis=-2)
+    mixed_probs = sum(tf.reduce_logsumexp(comp, axis=-2) for comp in components)
+    normalized_log_prob = mixed_probs[...,0]-mixed_probs[...,1]
+    return -normalized_log_prob
+
+
+
+def sample_from_discretized_mix_logistic(x, mixture_sizes):
     """
     We represent a mixture of logistics as a 1-dim array whose
     length is divisible by 3: An array of the form
@@ -262,17 +291,18 @@ def sample_from_discretized_mix_logistic(x, num_mixtures, discretization_scale):
         x_j -> sum_i p_i* logistic_pdf((x-m)/s)/s
     where logisitic_pdf(y)=0.25*sech(y/s) is the pdf of the
     centered logistic distribution function,
-    here the index i ranges from offset[j] to offset[j] + num_mixtures[j]
-    where offset[j] = sum(num_mixtures[:j])
+    here the index i ranges from offset[j] to offset[j] + mixture_sizes[j]
+    where offset[j] = sum(mixture_sizes[:j])
 
-    num_mixtures is a list of positive integers each indicating the number of
+    mixture_sizes is a list of positive integers each indicating the number of
     mixtures in the corresponding output.
+    # ToDo: add discretization w/ control of granularity
     """
     xshape = list(map(int, x.get_shape()))
-    num_logistics = xshape[-1] // 3 # 2 params for each logistic + 1 mixture
+    num_logistics = xshape[-1] // 3  # 2 params for each logistic + 1 mixture
 
     # First we sample the softmax indicators:
-    softmax_indices = sample_multinomials(x[...,:num_logistics], num_mixtures)
+    softmax_indices = sample_multinomials(x[...,:num_logistics], mixture_sizes)
     logistic_means = tf.batch_gather(
         params = x[..., num_logistics: 2*num_logistics],
         indices = softmax_indices,
@@ -304,11 +334,15 @@ def sample_multinomials(logit_probs, num_multinomials):
     all_gumbel_samples = logit_probs - tf.log(-tf.log(uniform_samples))
     split_gumbel_samples = tf.split(all_gumbel_samples, num_multinomials, axis=-1)
     print([0]+num_multinomials[:-1])
-    offsets = tf.cast(tf.scan(
-        lambda a, x: a + x,
-        tf.concat([[0]+num_multinomials[:-1]], axis=0)
-    ), dtype=tf.int32)
+    offsets = partition_offsets(num_multinomials)
     indices = [tf.cast(tf.argmax(gumbel_samples, axis=-1), tf.int32) + offset
                for offset, gumbel_samples in zip(offsets, split_gumbel_samples)]
     return tf.stack(indices, axis=-1)
 
+
+def partition_offsets(partition_sizes):
+    offsets = tf.cast(tf.scan(
+        lambda a, x: a + x,
+        tf.concat([[0] + partition_sizes[:-1]], axis = 0)
+    ), dtype = tf.int32)
+    return offsets
