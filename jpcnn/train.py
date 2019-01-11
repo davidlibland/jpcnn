@@ -10,6 +10,11 @@ from jpcnn.model import model, pixel_cnn_loss
 import time
 import numpy as np
 
+from jpcnn.nn import (
+    discretized_mix_logistic_loss,
+    sample_from_discretized_mix_logistic,
+)
+
 tf.enable_eager_execution()
 
 
@@ -22,7 +27,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir):
             with container.as_default():
                 ij_likelihood = model(predictions)[:, j, i, :]
             # print(ij_likelihood.mean(), ij_likelihood.std())
-            ij_sample = np.random.binomial(1, ij_likelihood)
+            ij_sample = sample_from_discretized_mix_logistic(ij_likelihood, [1])
             predictions[:,j,i,:] = ij_sample
 
     display_images(root_dir, 'image_at_epoch_{:04d}.png'.format(epoch), predictions[:,:,:,0])
@@ -63,12 +68,12 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
             with tf.GradientTape() as gr_tape, container.as_default():
                 image_var = tf.contrib.eager.Variable(images)
 
-                generated_images = model(image_var, training = True,
+                logits = model(image_var, training = True,
                                          num_layers=conf.num_layers,
                                          num_filters=conf.num_filters,
                                          num_resnet=conf.num_resnet)
 
-                loss = pixel_cnn_loss(images, generated_images)
+                loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, images, [1]))
             with tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar("loss", loss)
             total_loss.append(np.array(loss))

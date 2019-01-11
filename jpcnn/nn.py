@@ -261,18 +261,27 @@ def discretized_mix_logistic_loss(x, l, mixture_sizes):
     num_logistics = xshape[-1] // 3  # 2 params for each logistic + 1 mix param
     logit_probs = x[...,:num_logistics]
     means = x[..., num_logistics: 2*num_logistics]
-    log_scales = x[..., num_logistics: 2*num_logistics]
+    log_scales = x[..., 2*num_logistics:]
     target_indices = [i for j, l in enumerate(mixture_sizes) for i in [j]*l]
     component_targets = tf.gather(l, target_indices, axis=-1)
     centered_targets = component_targets - means
     inv_scale = tf.exp(-log_scales)
     normalized_targets_m = (centered_targets - 0.5) * inv_scale
     normalized_targets_p = (centered_targets + 0.5) * inv_scale
-    cdf_m = tf.nn.sigmoid(normalized_targets_m)
-    cdf_p = tf.nn.sigmoid(normalized_targets_p)
-    target_prob = cdf_p - cdf_m  # Note: difference could be numerically unstable
 
-    mixture_log_probs = logit_probs + tf.log(target_prob)
+    # Note: mixture_log_loss & mixture_log_probs compute the following:
+    # cdf_m = tf.nn.sigmoid(normalized_targets_m)
+    # cdf_p = tf.nn.sigmoid(normalized_targets_p)
+    # target_prob = cdf_p - cdf_m  # Note: difference could be numerically unstable
+    # mixture_log_probs = logit_probs + tf.log(target_prob)
+
+    mixture_log_loss = sum([
+        log_expm1(inv_scale),
+        - tf.math.softplus(normalized_targets_p),
+        - tf.math.softplus(-normalized_targets_m)
+    ])
+
+    mixture_log_probs = logit_probs + mixture_log_loss
     stacked = tf.stack([mixture_log_probs, logit_probs], axis = -1)
     components = tf.split(stacked, mixture_sizes, axis=-2)
     mixed_probs = sum(tf.reduce_logsumexp(comp, axis=-2) for comp in components)
@@ -346,3 +355,10 @@ def partition_offsets(partition_sizes):
         tf.concat([[0] + partition_sizes[:-1]], axis = 0)
     ), dtype = tf.int32)
     return offsets
+
+@tf.custom_gradient
+def log_expm1(x):
+    """Numerically stable log(expm1(_))"""
+    def grad(dy):
+        return dy*tf.where(x > 0, -1./tf.expm1(-x), tf.exp(x)/tf.expm1(x))
+    return tf.where(x > 50, x+tf.log1p(-tf.exp(-x)), tf.log(tf.expm1(x))), grad

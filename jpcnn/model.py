@@ -118,9 +118,9 @@ def model(inputs, num_filters, num_layers, num_resnet=1, dropout_p=0.9, training
         assert len(ul_list) == 0, "All ul layers should be connected."
         logits = nn.nin_layer(
             ul,
-            1
+            3
         )
-        return tf.sigmoid(logits)
+        return logits
 
 def pixel_cnn_loss(input, output):
     return tf.losses.sigmoid_cross_entropy(input, output)
