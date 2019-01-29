@@ -1,25 +1,126 @@
+from typing import List
+
 import tensorflow as tf
 
 
-def partition_axis(x, n, partition_axis):
+def partition_axis(x, n: int, axis: int):
     """Partitions the specified axis into n slices, the slice's
     index is appended to the end of the tensor"""
-    num_dims = len(list(tf.shape(x)))
-    xs = tf.split(x, num_or_size_splits = n, axis = partition_axis)
+    num_dims = len(list(_get_shape(x)))
+    xs = tf.split(x, num_or_size_splits = n, axis = axis)
+    assert isinstance(xs, list)
+    assert len(xs) == n, "There should be %d partitions, not %d" % (n, len(xs))
     x_stacked = tf.stack(xs, axis = num_dims)
+    assert int(tf.shape(x_stacked)[num_dims]) == n, \
+        "The partitions weren't stacked appropriately."
     permutation = list(range(num_dims + 1))
-    permutation[partition_axis] = num_dims
-    permutation[num_dims] = partition_axis
-    return tf.transpose(x_stacked, perm = permutation)
+    permutation[axis] = num_dims
+    permutation[num_dims] = axis
+    result = tf.transpose(x_stacked, perm = permutation)
+    assert int(tf.shape(result)[axis]) == n, \
+        "The specified axis wasn't partitioned correctly."
+    assert tf.reduce_all(tf.equal(x - unpartition_axis(result, axis), 0)), "%s\n %s" %(x, unpartition_axis(result, axis))
+    return result
 
 
-def unpartition_axis(x, partition_axis):
+def unpartition_axis(x, axis: int):
     """Reverse of partition_axis"""
     num_dims = len(list(tf.shape(x)))
     permutation = list(range(num_dims))
-    permutation[partition_axis] = num_dims - 1
-    permutation[num_dims - 1] = partition_axis
-    x_untransposed = tf.transpose(x, perm = permutation, conjugate = True)
+    permutation[axis] = num_dims - 1
+    permutation[num_dims - 1] = axis
+    x_untransposed = tf.transpose(x, perm = permutation)
     xs = tf.unstack(x_untransposed, axis = num_dims - 1)
-    return tf.concat(xs, axis = partition_axis)
+    result = tf.concat(xs, axis = axis)
+    assert len(list(tf.shape(result))) == num_dims - 1, \
+        "There should be one fewer dimensions after unpartioning."
+    assert int(tf.shape(result)[axis]) == \
+           int(tf.shape(x)[axis]) * int(tf.shape(x)[-1]), \
+        "The unpartitioned array should concatenate the final axis along the" \
+        "partition axis."
+    return result
 
+
+def dct(x, axes: List[int]):
+    """Applies a dct to the specified axes"""
+    num_dims = len(list(_get_shape(x)))
+    def one_axis(x, axis):
+        permutation = list(range(num_dims))
+        permutation[-1] = axis
+        permutation[axis] = num_dims - 1
+        x_transposed = tf.transpose(x, perm = permutation)
+        x_dct_trans = tf.spectral.dct(x_transposed, norm="ortho")
+        return tf.transpose(x_dct_trans, perm = permutation)
+    if len(axes) > 0:
+        return dct(one_axis(x, axes[-1] % num_dims), axes[:-1])
+    return x
+
+
+def idct(x, axes: List[int]):
+    """Applies a idct to the specified axes"""
+    num_dims = len(list(tf.shape(x)))
+    def one_axis(x, axis):
+        permutation = list(range(num_dims))
+        permutation[-1] = axis
+        permutation[axis] = num_dims - 1
+        x_transposed = tf.transpose(x, perm = permutation)
+        x_dct_trans = tf.spectral.idct(x_transposed, norm="ortho")
+        return tf.transpose(x_dct_trans, perm = permutation)
+    if len(axes) > 0:
+        return idct(one_axis(x, axes[-1] % num_dims), axes[:-1])
+    return x
+
+
+def jpeg_compression(x, strides: List[int], compression):
+    """
+    Assumes x is of shape [N, H, W, C] (batch, height, width, channels)
+    The output is of shape [N, H/s_h, W/s_w, C'], where strides = [s_h, s_w]
+    The strides must be divisors of the height and width.
+    # Docstring incorrect: the shape is extended by 2d
+    """
+    assert tf.reduce_all(compression > 0), \
+        "Compression matrix must have positive values"
+    in_shape = _get_shape(x)[1:3]
+    num_height_parts = in_shape[0] // strides[0]
+    num_width_parts = in_shape[1] // strides[1]
+    height_part = partition_axis(x, num_height_parts, 1)
+    partitioned_x = partition_axis(height_part, num_width_parts, 2)
+    dct_x = dct(partitioned_x, [-2, -1])
+    quant_qual_reshaped = compression[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, :, :]
+    pre_compressed_x = dct_x / quant_qual_reshaped
+    compressed_x = tf.round(pre_compressed_x)
+    return tf.transpose(compressed_x, perm = [0, 1, 2, 4, 5, 3])
+
+
+def jpeg_reconstruction(x, compression):
+    """
+    Assumes x is of shape [N, H, W, C] (batch, height, width, channels)
+    The output is of shape [N, H/s_h, W/s_w, C'], where strides = [s_h, s_w]
+    The strides must be divisors of the height and width.
+    # Docstring incorrect: the shape is shrunk by 2d
+    """
+    assert tf.reduce_all(compression > 0), \
+        "Compression matrix must have positive values"
+    quant_qual_reshaped = compression[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, :, :]
+
+    reshaped_x = tf.transpose(x, perm = [0, 1, 2, 5, 3, 4])
+    decompressed_x = reshaped_x * quant_qual_reshaped
+    idct_x = idct(decompressed_x, [-2, -1])
+    unpart_width_x = unpartition_axis(idct_x, 2)
+    return unpartition_axis(unpart_width_x, 1)
+
+
+def flat_compress(x, strides: List[int], compression):
+    compressed = jpeg_compression(x, strides, compression)
+    in_shape = _get_shape(compressed)
+    return tf.reshape(compressed, in_shape[:3]+[-1])
+
+
+def flat_reconstruct(x, strides: List[int], compression):
+    in_shape = _get_shape(x)
+    reshaped = tf.reshape(x, in_shape[:3] + strides + [-1])
+    return jpeg_reconstruction(reshaped, compression)
+
+
+def _get_shape(x):
+    return list(map(int, tf.shape(x)))

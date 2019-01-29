@@ -33,6 +33,13 @@ test_data = np.array([
 #     [1, 1, 0, 0, 1, 1],
 #     [1, 1, 1, 1, 1, 1],
 # ], dtype=np.float32)
+# small gradient: nl=1, nr=1, nf=50, lr=1e-2
+test_data = np.array([
+    [0, 40, 80, 120],
+    [40, 80, 120, 160],
+    [80, 120, 160, 200],
+    [120, 160, 200, 240]
+], dtype=np.float32)
 
 
 def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False, dtype: str="float32"):
@@ -40,7 +47,7 @@ def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False, dtype: str="fl
     if basic_test_data:
         train_images = np.stack([test_data]*batch_size, axis = 0)
         train_images = np.expand_dims(train_images, 3)
-        train_images = train_images.astype(dtype)
+        train_images = train_images.astype(dtype)/40
     else:
         (train_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
         train_images = train_images.reshape(train_images.shape[0], 28, 28,

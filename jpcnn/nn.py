@@ -342,7 +342,6 @@ def sample_multinomials(logit_probs, num_multinomials):
     )
     all_gumbel_samples = logit_probs - tf.log(-tf.log(uniform_samples))
     split_gumbel_samples = tf.split(all_gumbel_samples, num_multinomials, axis=-1)
-    print([0]+num_multinomials[:-1])
     offsets = partition_offsets(num_multinomials)
     indices = [tf.cast(tf.argmax(gumbel_samples, axis=-1), tf.int32) + offset
                for offset, gumbel_samples in zip(offsets, split_gumbel_samples)]
@@ -355,6 +354,7 @@ def partition_offsets(partition_sizes):
         tf.concat([[0] + partition_sizes[:-1]], axis = 0)
     ), dtype = tf.int32)
     return offsets
+
 
 @tf.custom_gradient
 def log_expm1(x):

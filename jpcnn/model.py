@@ -5,6 +5,7 @@ import jpcnn.nn as nn
 
 def model(inputs, num_filters, num_layers, num_resnet=1, dropout_p=0.9, training=True, init=False):
     # Initial layers:
+    in_shape = list(map(int, tf.shape(inputs)))
     counters = {}
     if not training:
         dropout_p = 0
@@ -118,7 +119,7 @@ def model(inputs, num_filters, num_layers, num_resnet=1, dropout_p=0.9, training
         assert len(ul_list) == 0, "All ul layers should be connected."
         logits = nn.nin_layer(
             ul,
-            3
+            3 * in_shape[-1]  # 3 per channel
         )
         return logits
 
