@@ -1,7 +1,7 @@
 # Import TensorFlow >= 1.10 and enable eager execution
 import tensorflow as tf
 import numpy as np
-from jpcnn.image_utils import display_images
+from jpcnn.image_utils import save_and_display_images
 
 # Globals:
 
@@ -53,14 +53,21 @@ def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False, dtype: str="fl
         train_images = train_images.reshape(train_images.shape[0], 28, 28,
                                             1).astype(dtype)[train_labels==0,:,:,:]
         # We are normalizing the images to the range of [0, 1]
-        train_images = np.round(train_images / 256).astype(dtype)
+        # train_images = np.round(train_images / 256).astype(dtype)
+        train_images = train_images.astype(dtype)
     BUFFER_SIZE = train_images.shape[0]
     assert train_images.shape[1] == train_images.shape[2], "Images should be square"
     image_dim = train_images.shape[1]
+    # Normalize images to the range of [0, 1]
+    image_max = tf.reduce_max(train_images)
+    image_min = tf.reduce_min(train_images)
+    assert image_max > image_min, "Must have nontrivial images"
+    if image_max > 1 or image_min < 0:
+        train_images = (train_images - image_min)/(image_max - image_min)
     print("Buffer size: %d" % BUFFER_SIZE)
     print("Image size: %d" % image_dim)
 
-    display_images(".", "training_sample.png", train_images[:16,:,:,0])
+    save_and_display_images(".", "training_sample.png", train_images[:16, :, :, 0])
 
     # return train_images
     return (tf.data.Dataset.from_tensor_slices(train_images).shuffle(

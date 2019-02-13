@@ -2,11 +2,13 @@ from typing import List
 
 import tensorflow as tf
 
+from jpcnn.nn import get_shape_as_list
+
 
 def partition_axis(x, n: int, axis: int):
     """Partitions the specified axis into n slices, the slice's
     index is appended to the end of the tensor"""
-    num_dims = len(list(_get_shape(x)))
+    num_dims = len(get_shape_as_list(x))
     xs = tf.split(x, num_or_size_splits = n, axis = axis)
     assert isinstance(xs, list)
     assert len(xs) == n, "There should be %d partitions, not %d" % (n, len(xs))
@@ -19,7 +21,7 @@ def partition_axis(x, n: int, axis: int):
     result = tf.transpose(x_stacked, perm = permutation)
     assert int(tf.shape(result)[axis]) == n, \
         "The specified axis wasn't partitioned correctly."
-    assert tf.reduce_all(tf.equal(x - unpartition_axis(result, axis), 0)), "%s\n %s" %(x, unpartition_axis(result, axis))
+    assert tf.reduce_all(tf.equal(x - unpartition_axis(result, axis), 0)), "%s\n %s" %( x, unpartition_axis(result, axis))
     return result
 
 
@@ -43,7 +45,7 @@ def unpartition_axis(x, axis: int):
 
 def dct(x, axes: List[int]):
     """Applies a dct to the specified axes"""
-    num_dims = len(list(_get_shape(x)))
+    num_dims = len(get_shape_as_list(x))
     def one_axis(x, axis):
         permutation = list(range(num_dims))
         permutation[-1] = axis
@@ -78,9 +80,11 @@ def jpeg_compression(x, strides: List[int], compression):
     The strides must be divisors of the height and width.
     # Docstring incorrect: the shape is extended by 2d
     """
+    if isinstance(compression, list):
+        compression = tf.constant(compression, dtype = tf.float32)
     assert tf.reduce_all(compression > 0), \
         "Compression matrix must have positive values"
-    in_shape = _get_shape(x)[1:3]
+    in_shape = get_shape_as_list(x)[1:3]
     num_height_parts = in_shape[0] // strides[0]
     num_width_parts = in_shape[1] // strides[1]
     height_part = partition_axis(x, num_height_parts, 1)
@@ -99,6 +103,8 @@ def jpeg_reconstruction(x, compression):
     The strides must be divisors of the height and width.
     # Docstring incorrect: the shape is shrunk by 2d
     """
+    if isinstance(compression, list):
+        compression = tf.constant(compression, dtype = tf.float32)
     assert tf.reduce_all(compression > 0), \
         "Compression matrix must have positive values"
     quant_qual_reshaped = compression[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, :, :]
@@ -110,17 +116,15 @@ def jpeg_reconstruction(x, compression):
     return unpartition_axis(unpart_width_x, 1)
 
 
-def flat_compress(x, strides: List[int], compression):
+def flat_compress(x, compression):
+    strides = get_shape_as_list(compression)
     compressed = jpeg_compression(x, strides, compression)
-    in_shape = _get_shape(compressed)
+    in_shape = get_shape_as_list(compressed)
     return tf.reshape(compressed, in_shape[:3]+[-1])
 
 
-def flat_reconstruct(x, strides: List[int], compression):
-    in_shape = _get_shape(x)
+def flat_reconstruct(x, compression):
+    strides = get_shape_as_list(compression)
+    in_shape = get_shape_as_list(x)
     reshaped = tf.reshape(x, in_shape[:3] + strides + [-1])
     return jpeg_reconstruction(reshaped, compression)
-
-
-def _get_shape(x):
-    return list(map(int, tf.shape(x)))

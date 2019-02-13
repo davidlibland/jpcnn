@@ -13,15 +13,29 @@ def get_name(layer_name: str, counters: dict):
     counters[layer_name] += 1
     return name
 
+
+def get_shape_as_list(x):
+    """Returns the shape of the tensor as a list of ints."""
+    try:
+        name = x.name
+    except Exception as e:
+        name = "missing_name"
+    shape = list(map(int, tf.shape(x)))
+    desc = "Shape: {}, Name: {}, Type: {}".format(shape, name, type(x))
+    # print(desc)
+    return shape
+
+
 @add_arg_scope
 def crop2d_layer(x, croppings, counters=None, init=False):
-    xshape = list(map(int, x.get_shape()))
+    xshape = get_shape_as_list(x)
     ty = croppings[0][0]
     by = croppings[0][1]
     lx = croppings[1][0]
     rx = croppings[1][1]
 
     return x[:, ty: xshape[1]-by, lx: xshape[2] - rx, :]
+
 
 @add_arg_scope
 def pad2d_layer(x, paddings, mode="CONSTANT", counters=None, init=False):
@@ -46,7 +60,7 @@ def conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=No
     kernel_size=tuple(kernel_size)
     strides=tuple(strides)
     with tf.variable_scope(name):
-        xshape = list(map(int, x.get_shape()))
+        xshape = get_shape_as_list(x)
         V = tf.get_variable(name = "V", shape = kernel_size + (xshape[-1], num_filters), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
         g = tf.get_variable(name = "g", shape = [num_filters], initializer=tf.constant_initializer(1.), dtype=tf.float32)
         b = tf.get_variable(name = "b", shape = [num_filters], initializer=tf.constant_initializer(0.), dtype=tf.float32)
@@ -73,13 +87,12 @@ def conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=No
 @add_arg_scope
 def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1.):
     name = get_name('deconv', counters)
-    xshape = list(map(int, x.get_shape()))
+    xshape = get_shape_as_list(x)
     if pad=='SAME':
         output_shape = [xshape[0], xshape[1]*strides[0], xshape[2]*strides[1], num_filters]
     else:
         output_shape = [xshape[0], xshape[1]*strides[0] + kernel_size[0]-1, xshape[2]*strides[1] + kernel_size[1]-1, num_filters]
     with tf.variable_scope(name):
-        xshape = list(map(int, x.get_shape()))
         V = tf.get_variable(name = "V", shape = kernel_size + (num_filters, xshape[-1]), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
         g = tf.get_variable(name = "g", shape = [num_filters], initializer=tf.constant_initializer(1.), dtype=tf.float32)
         b = tf.get_variable(name = "b", shape = [num_filters], initializer=tf.constant_initializer(0.), dtype=tf.float32)
@@ -108,7 +121,7 @@ def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=
 def dense_layer(x, num_units, nonlinearity=None, counters=None, init=False, init_scale=1.):
     name = get_name('dense', counters)
     with tf.variable_scope(name):
-        xshape = list(map(int, x.get_shape()))
+        xshape = get_shape_as_list(x)
         V = tf.get_variable(name = "V", shape = [xshape[1], num_units], initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
         g = tf.get_variable(name = "g", shape = [num_units], initializer=tf.constant_initializer(1.), dtype=tf.float32)
         b = tf.get_variable(name = "b", shape = [num_units], initializer=tf.constant_initializer(0.), dtype=tf.float32)
@@ -132,7 +145,7 @@ def dense_layer(x, num_units, nonlinearity=None, counters=None, init=False, init
 @add_arg_scope
 def nin_layer(x, num_units, **kwargs):
     """ a network in network layer (1x1 CONV) """
-    xshape = list(map(int, x.get_shape()))
+    xshape = get_shape_as_list(x)
     x = tf.reshape(x, [np.prod(xshape[:-1]), xshape[-1]])
     x = dense_layer(x, num_units, **kwargs)
     return tf.reshape(x, xshape[:-1]+[num_units])
@@ -143,7 +156,7 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
     """A batch normalization layer"""
     name = get_name('batch_norm', counters)
     with tf.variable_scope(name):
-        xshape = list(map(int, x.get_shape()))
+        xshape = get_shape_as_list(x)
         x_flatshape = [xshape[0], np.prod(xshape[1:])]
         x_flat = tf.reshape(x, x_flatshape)
         batch_mean, batch_var = tf.nn.moments(x_flat, [0], name=name)
@@ -156,7 +169,7 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
 
 @add_arg_scope
 def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, **kwargs):
-    x_shape = list(map(int, x.get_shape()))
+    x_shape = get_shape_as_list(x)
     num_filters = x_shape[-1]
 
     y1 = conv(nonlinearity(x), num_filters=num_filters)
@@ -224,7 +237,7 @@ def shift_deconv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=Non
 def skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, dropout_p=0.9):
     if nonlinearity is not None:
         x = nonlinearity(x)
-    xshape = list(map(int, x.get_shape()))
+    xshape = get_shape_as_list(x)
     c2 = nin_layer(y, xshape[-1], nonlinearity=nonlinearity)
 
     return x + c2
@@ -254,8 +267,8 @@ def down_right_shifted_conv2d(x, num_filters, kernel_size=(2, 2), strides=(1, 1)
 
 def discretized_mix_logistic_loss(x, l, mixture_sizes):
     # ToDo: add discretization w/ control of granularity
-    xshape = list(map(int, x.get_shape()))
-    lshape = list(map(int, l.get_shape()))
+    xshape = get_shape_as_list(x)
+    lshape = get_shape_as_list(l)
     assert xshape[:-1] == lshape[:-1], \
         "Target shape must be compatible with shape of distribution params."
     num_logistics = xshape[-1] // 3  # 2 params for each logistic + 1 mix param
@@ -289,7 +302,6 @@ def discretized_mix_logistic_loss(x, l, mixture_sizes):
     return -normalized_log_prob
 
 
-
 def sample_from_discretized_mix_logistic(x, mixture_sizes):
     """
     We represent a mixture of logistics as a 1-dim array whose
@@ -307,7 +319,7 @@ def sample_from_discretized_mix_logistic(x, mixture_sizes):
     mixtures in the corresponding output.
     # ToDo: add discretization w/ control of granularity
     """
-    xshape = list(map(int, x.get_shape()))
+    xshape = get_shape_as_list(x)
     num_logistics = xshape[-1] // 3  # 2 params for each logistic + 1 mixture
 
     # First we sample the softmax indicators:
@@ -324,6 +336,7 @@ def sample_from_discretized_mix_logistic(x, mixture_sizes):
                           minval=1e-5, maxval=1. - 1e-5)
     smooth_x = logistic_means + logistic_scales*(tf.log(u) - tf.log(1. - u))
     # discretize (todo)
+
     return smooth_x
 
 
@@ -334,6 +347,8 @@ def sample_multinomials(logit_probs, num_multinomials):
     For instance to sample from a binomial and trinomial distribution with
     logit probs (2, -1), and (1, 1, 2), respectively, one would call:
     sample_multinomials([2, -1, 1, 1, 2], [2, 3])
+
+    returns int-valued tensor.
     """
     uniform_samples = tf.random_uniform(
         logit_probs.get_shape(),
