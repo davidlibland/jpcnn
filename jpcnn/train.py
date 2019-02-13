@@ -1,7 +1,7 @@
 import tensorflow as tf
 from jpcnn.config import JPCNNConfig
 from jpcnn.data import get_dataset
-from jpcnn.dct_utils import flat_compress, flat_reconstruct
+from jpcnn.dct_utils import flat_compress, flat_reconstruct, basic_compression
 from jpcnn.file_utils import (
     build_checkpoint_file_name,
     load_or_save_conf,
@@ -20,7 +20,7 @@ tf.enable_eager_execution()
 in_shape = None
 
 
-def generate_and_save_images(model, epoch, test_input, container, root_dir, compression):
+def generate_and_save_images(model, epoch, test_input, container, root_dir, compression, display_images=False):
     height = test_input.shape[1]
     width = test_input.shape[2]
     channels = test_input.shape[-1]
@@ -30,16 +30,20 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
         for i in range(width):
             with container.as_default():
                 ij_likelihood = model(predictions)[:, j, i, :]
-            # print(ij_likelihood.mean(), ij_likelihood.std())
             ij_sample = sample_from_discretized_mix_logistic(ij_likelihood, [1] * channels)
             predictions[:,j,i,:] = ij_sample
+
+            # crop values to [0,1] interval:
             reconstruction = flat_reconstruct(predictions, compression)
             capped_sample = tf.maximum(tf.minimum(reconstruction, 1), 0)
             recompression = flat_compress(capped_sample, compression)
             cap_adjustments.append(float(tf.reduce_max(tf.abs(ij_sample - recompression[:,j,i,:]))))
             predictions[:,j,i,:] = recompression[:,j,i,:]
+
     print("Cap adjustment: %s" % max(cap_adjustments))
-    save_and_display_images(root_dir, 'image_at_epoch_{:04d}.png'.format(epoch), flat_reconstruct(predictions, compression)[:, :, :, 0])
+    decompressed_images = flat_reconstruct(predictions, compression)[:, :, :, 0]
+    save_and_display_images(root_dir, 'image_at_epoch_{:04d}.png'.format(epoch),
+                            decompressed_images, display = display_images)
 
 
 def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
@@ -54,7 +58,6 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
 
     # Data dependent initialization:
     for i, images in enumerate(dataset):
-        images = flat_compress(images, conf.compression)
         with container.as_default():
             image_var = tf.contrib.eager.Variable(images)
             model(image_var, training = True, num_layers = conf.num_layers,
@@ -75,7 +78,6 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
         start = time.time()
         total_loss = []
         for images in dataset:
-            images = flat_compress(images, conf.compression)
 
             with tf.GradientTape() as gr_tape, container.as_default():
                 image_var = tf.contrib.eager.Variable(images)
@@ -118,7 +120,8 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
                 noise,
                 container,
                 dir_name,
-                conf.compression
+                conf.compression,
+                display_images = conf.display_images
             )
             ckpt_name = build_checkpoint_file_name(dir_name, conf.description)
             fp = saver.save(None, ckpt_name, global_step=global_step)
@@ -141,18 +144,23 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
         noise, 
         container,
         dir_name,
-        conf.compression
+        conf.compression,
+        display_images = conf.display_images
     )
 
 
 if __name__ == "__main__":
-    train_dataset, image_dim = get_dataset(basic_test_data = False)
-    compression = np.array([[1,2,3,4],
-                            [2,3,4,5],
-                            [3,4,5,6],
-                            [4,5,6,7]])/2.
+    # compression = (np.array([[1,2,3,4],
+    #                         [2,3,4,5],
+    #                         [3,4,5,6],
+    #                         [4,5,6,7]])/2.).tolist()
+    compression = basic_compression(.5, 3.5, [7, 7])
+    train_dataset, image_dim = get_dataset(
+        basic_test_data = False,
+        image_preprocessor = lambda im: flat_compress(im, compression)
+    )
     train(train_dataset, JPCNNConfig(
         image_dim=image_dim,
-        compression = compression.tolist()
+        compression = compression
     ))
     # train(train_dataset, JPCNNConfig(image_dim=image_dim), ckpt_file = "Checkpoint-20181011-004410/params_tmp.ckpt-15")

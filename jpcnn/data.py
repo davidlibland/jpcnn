@@ -42,7 +42,7 @@ test_data = np.array([
 ], dtype=np.float32)
 
 
-def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False, dtype: str="float32"):
+def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_data = False, dtype: str= "float32"):
     global BUFFER_SIZE
     if basic_test_data:
         train_images = np.stack([test_data]*batch_size, axis = 0)
@@ -69,6 +69,8 @@ def get_dataset(batch_size = BATCH_SIZE, basic_test_data = False, dtype: str="fl
 
     save_and_display_images(".", "training_sample.png", train_images[:16, :, :, 0])
 
+    if image_preprocessor:
+        train_images = image_preprocessor(train_images)
     # return train_images
     return (tf.data.Dataset.from_tensor_slices(train_images).shuffle(
         BUFFER_SIZE).batch(batch_size),

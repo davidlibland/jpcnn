@@ -128,3 +128,23 @@ def flat_reconstruct(x, compression):
     in_shape = get_shape_as_list(x)
     reshaped = tf.reshape(x, in_shape[:3] + strides + [-1])
     return jpeg_reconstruction(reshaped, compression)
+
+
+def basic_compression(
+        min_comp: float,
+        max_comp: float,
+        patch_size: List[int]
+) -> List[List[float]]:
+    """Builds a basic compression matrix, with entry [i,j] depending linearly
+    on i+j, the minimum in the top left, and the maximum in the lower right."""
+    b = min_comp
+    max_ij = (patch_size[0]+patch_size[1] - 2)
+    a = (max_comp-min_comp)/max_ij
+    def lin_transformation(n):
+        return a*n + b
+    compression = []
+    for i in range(patch_size[0]):
+        compression.append([])
+        for j in range(patch_size[1]):
+            compression[-1].append(lin_transformation(i+j))
+    return compression
