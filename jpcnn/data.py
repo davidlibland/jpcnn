@@ -45,33 +45,35 @@ test_data = np.array([
 def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_data = False, dtype: str= "float32"):
     global BUFFER_SIZE
     if basic_test_data:
-        train_images = np.stack([test_data]*batch_size, axis = 0)
-        train_images = np.expand_dims(train_images, 3)
-        train_images = train_images.astype(dtype)/40
+        all_images = np.stack([test_data]*batch_size, axis = 0)
+        all_images = np.expand_dims(all_images, 3)
+        all_images = all_images.astype(dtype)/40
     else:
-        (train_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
-        train_images = train_images.reshape(train_images.shape[0], 28, 28,
+        (all_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
+        all_images = all_images.reshape(all_images.shape[0], 28, 28,
                                             1).astype(dtype)[train_labels==0,:,:,:]
         # We are normalizing the images to the range of [0, 1]
         # train_images = np.round(train_images / 256).astype(dtype)
-        train_images = train_images.astype(dtype)
-    BUFFER_SIZE = train_images.shape[0]
-    assert train_images.shape[1] == train_images.shape[2], "Images should be square"
-    image_dim = train_images.shape[1]
+        all_images = all_images.astype(dtype)
+    BUFFER_SIZE = all_images.shape[0]
+    assert all_images.shape[1] == all_images.shape[2], "Images should be square"
+    image_dim = all_images.shape[1]
     # Normalize images to the range of [0, 1]
-    image_max = tf.reduce_max(train_images)
-    image_min = tf.reduce_min(train_images)
+    image_max = tf.reduce_max(all_images)
+    image_min = tf.reduce_min(all_images)
     assert image_max > image_min, "Must have nontrivial images"
     if image_max > 1 or image_min < 0:
-        train_images = (train_images - image_min)/(image_max - image_min)
+        all_images = (all_images - image_min)/(image_max - image_min)
     print("Buffer size: %d" % BUFFER_SIZE)
     print("Image size: %d" % image_dim)
 
-    save_and_display_images(".", "training_sample.png", train_images[:16, :, :, 0])
+    save_and_display_images(".", "training_sample.png", all_images[:16, :, :, 0])
 
     if image_preprocessor:
-        train_images = image_preprocessor(train_images)
+        all_images = image_preprocessor(all_images)
+
     # return train_images
-    return (tf.data.Dataset.from_tensor_slices(train_images).shuffle(
-        BUFFER_SIZE).batch(batch_size),
+    return (tf.data.Dataset.from_tensor_slices(all_images)
+            .shuffle(BUFFER_SIZE)
+            .batch(batch_size),
             image_dim)

@@ -21,7 +21,7 @@ def partition_axis(x, n: int, axis: int):
     result = tf.transpose(x_stacked, perm = permutation)
     assert int(tf.shape(result)[axis]) == n, \
         "The specified axis wasn't partitioned correctly."
-    assert tf.reduce_all(tf.equal(x - unpartition_axis(result, axis), 0)), "%s\n %s" %( x, unpartition_axis(result, axis))
+    # assert tf.reduce_all(tf.equal(x - unpartition_axis(result, axis), 0)), "%s\n %s" %( x, unpartition_axis(result, axis))
     return result
 
 

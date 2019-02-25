@@ -1,4 +1,8 @@
 import tensorflow as tf
+tf.enable_eager_execution()
+# fix random seed for reproducibility
+seed = 4
+tf.set_random_seed(seed)
 from jpcnn.config import JPCNNConfig
 from jpcnn.data import get_dataset
 from jpcnn.dct_utils import flat_compress, flat_reconstruct, basic_compression
@@ -15,9 +19,6 @@ from jpcnn.nn import (
     discretized_mix_logistic_loss,
     sample_from_discretized_mix_logistic,
 )
-
-tf.enable_eager_execution()
-in_shape = None
 
 
 def generate_and_save_images(model, epoch, test_input, container, root_dir, compression, display_images=False):
@@ -46,8 +47,9 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
                             decompressed_images, display = display_images)
 
 
-def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
-    noise = np.random.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
+def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None):
+    rng = np.random.RandomState(conf.seed)
+    noise = rng.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
     noise = flat_compress(noise, conf.compression)
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
@@ -57,7 +59,7 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
     summary_writer.set_as_default()
 
     # Data dependent initialization:
-    for i, images in enumerate(dataset):
+    for i, images in enumerate(train_dataset):
         with container.as_default():
             image_var = tf.contrib.eager.Variable(images)
             model(image_var, training = True, num_layers = conf.num_layers,
@@ -76,8 +78,8 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
         global_step.assign_add(1)
         print("Starting Epoch: {0:d}".format(int(global_step)))
         start = time.time()
-        total_loss = []
-        for images in dataset:
+        total_train_loss = []
+        for images in train_dataset:
 
             with tf.GradientTape() as gr_tape, container.as_default():
                 image_var = tf.contrib.eager.Variable(images)
@@ -91,7 +93,7 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
                 loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, images, [1] * im_shape[-1]))
             with tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar("loss", loss)
-            total_loss.append(np.array(loss))
+            total_train_loss.append(np.array(loss))
             print(float(loss))
 
             gradients = gr_tape.gradient(
@@ -106,7 +108,18 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
                 def safe_div(x, y):
                     if x is None:
                         return 0
-                    return tf.reduce_mean(abs(x) / (abs(y) + 1e-10))
+                    rel_grads = (abs(x) / (abs(y) + 1e-10)).numpy().reshape(-1)
+                    valid_grads = rel_grads[tf.is_finite(rel_grads)]
+                    avg_rel_grad = tf.reduce_mean(valid_grads)
+                    if not tf.is_finite(avg_rel_grad):
+                        print("error, non finite grad")
+                        # print(x)
+                        # print(y)
+                        # print(avg_rel_grad)
+                        return 0
+                    return avg_rel_grad
+                # print("Finite Gradients: %s"% tf.reduce_all(tf.is_finite(gradients)))
+                # print("Finite Variables: %s"% tf.reduce_all(tf.is_finite(container.trainable_variables())))
                 rel_grads = list(map(safe_div, gradients, container.trainable_variables()))
                 tf.contrib.summary.histogram("relative_gradients", rel_grads)
 
@@ -128,13 +141,32 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
             print("Model Saved at {}".format(fp))
             # do_sync()
 
+            # Compute test_set loss:
+            total_val_loss = []
+            for test_images in val_dataset:
+                image_var = tf.contrib.eager.Variable(test_images)
+                im_shape = list(map(int, tf.shape(image_var)))
+
+                logits = model(image_var, training = False,
+                                         num_layers=conf.num_layers,
+                                         num_filters=conf.num_filters,
+                                         num_resnet=conf.num_resnet)
+
+                loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, test_images, [1] * im_shape[-1]))
+                with tf.contrib.summary.always_record_summaries():
+                    tf.contrib.summary.scalar("validation loss", loss)
+                total_val_loss.append(loss)
+            avg_val_loss = tf.reduce_mean(total_val_loss)
+            print('Validation Loss for epoch {} is {}'.format(int(global_step), avg_val_loss))
+
+
         # if (epoch + 1) % 15 == 0:
         #     checkpoint.save(file_prefix = checkpoint_prefix)
 
         print('Time taken for epoch {} is {} sec'.format(int(global_step),
                                                       time.time()-start))
 
-        print('Loss for epoch {} is {}'.format(int(global_step), np.mean(total_loss)))
+        print('Training Loss for epoch {} is {}'.format(int(global_step), np.mean(total_train_loss)))
     # display.clear_output(wait = True)
     generate_and_save_images(
         lambda pred: model(pred, num_layers=conf.num_layers,
@@ -150,17 +182,25 @@ def train(dataset, conf: JPCNNConfig, ckpt_file: str=None):
 
 
 if __name__ == "__main__":
+    # tf.enable_eager_execution()
     # compression = (np.array([[1,2,3,4],
     #                         [2,3,4,5],
     #                         [3,4,5,6],
     #                         [4,5,6,7]])/2.).tolist()
     compression = basic_compression(.5, 3.5, [7, 7])
-    train_dataset, image_dim = get_dataset(
+    num_test_elements = 5923//256//5
+    full_dataset, image_dim = get_dataset(
         basic_test_data = False,
         image_preprocessor = lambda im: flat_compress(im, compression)
     )
-    train(train_dataset, JPCNNConfig(
+    val_dataset = full_dataset.take(num_test_elements)
+    train_dataset = full_dataset.skip(num_test_elements)
+    # train_dataset=full_dataset
+    # val_dataset=full_dataset
+    train(train_dataset, val_dataset, JPCNNConfig(
         image_dim=image_dim,
-        compression = compression
+        compression = compression,
+        seed = seed,
+        num_test_elements = num_test_elements
     ))
     # train(train_dataset, JPCNNConfig(image_dim=image_dim), ckpt_file = "Checkpoint-20181011-004410/params_tmp.ckpt-15")

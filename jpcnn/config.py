@@ -13,5 +13,7 @@ class JPCNNConfig:
     description: str="mnist"
     ckpt_interval: int=1
     dropbox_root: str="checkpoints"
-    display_images: bool=True
+    display_images: bool=False
     compression: List[List[float]]=field(default_factory=lambda: [[1]])
+    seed: int=1
+    num_test_elements: int=4
