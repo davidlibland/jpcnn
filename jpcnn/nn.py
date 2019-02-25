@@ -274,11 +274,11 @@ def discretized_mix_logistic_loss(x, l, mixture_sizes):
     num_logistics = xshape[-1] // 3  # 2 params for each logistic + 1 mix param
     logit_probs = x[...,:num_logistics]
     means = x[..., num_logistics: 2*num_logistics]
-    log_scales = x[..., 2*num_logistics:]
+    logexpm1_scales = x[..., 2*num_logistics:]
     target_indices = [i for j, l in enumerate(mixture_sizes) for i in [j]*l]
     component_targets = tf.gather(l, target_indices, axis=-1)
     centered_targets = component_targets - means
-    inv_scale = tf.exp(-log_scales)
+    inv_scale = tf.nn.softplus(-logexpm1_scales)
     normalized_targets_m = (centered_targets - 0.5) * inv_scale
     normalized_targets_p = (centered_targets + 0.5) * inv_scale
 
@@ -289,7 +289,7 @@ def discretized_mix_logistic_loss(x, l, mixture_sizes):
     # mixture_log_probs = logit_probs + tf.log(target_prob)
 
     mixture_log_loss = sum([
-        log_expm1(inv_scale),
+        - logexpm1_scales,  # = logexpm1(inv_scale)
         - tf.math.softplus(normalized_targets_p),
         - tf.math.softplus(-normalized_targets_m)
     ])
@@ -373,7 +373,9 @@ def partition_offsets(partition_sizes):
 
 @tf.custom_gradient
 def log_expm1(x):
-    """Numerically stable log(expm1(_))"""
+    """Numerically stable log(expm1(_)); the inverse of the softplus function"""
+    assert tf.reduce_all(tf.is_finite(x))
     def grad(dy):
+        assert tf.reduce_all(tf.is_finite(dy))
         return dy*tf.where(x > 0, -1./tf.expm1(-x), tf.exp(x)/tf.expm1(x))
     return tf.where(x > 50, x+tf.log1p(-tf.exp(-x)), tf.log(tf.expm1(x))), grad
