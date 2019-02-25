@@ -44,6 +44,8 @@ test_data = np.array([
 
 def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_data = False, dtype: str= "float32"):
     global BUFFER_SIZE
+    global BATCH_SIZE
+    BATCH_SIZE = batch_size
     if basic_test_data:
         all_images = np.stack([test_data]*batch_size, axis = 0)
         all_images = np.expand_dims(all_images, 3)
@@ -51,7 +53,7 @@ def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_d
     else:
         (all_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
         all_images = all_images.reshape(all_images.shape[0], 28, 28,
-                                            1).astype(dtype)[train_labels==0,:,:,:]
+                                            1).astype(dtype) # [train_labels==0,:,:,:]
         # We are normalizing the images to the range of [0, 1]
         # train_images = np.round(train_images / 256).astype(dtype)
         all_images = all_images.astype(dtype)
@@ -65,6 +67,7 @@ def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_d
     if image_max > 1 or image_min < 0:
         all_images = (all_images - image_min)/(image_max - image_min)
     print("Buffer size: %d" % BUFFER_SIZE)
+    print("Mini Batch size: %d" % BATCH_SIZE)
     print("Image size: %d" % image_dim)
 
     save_and_display_images(".", "training_sample.png", all_images[:16, :, :, 0])

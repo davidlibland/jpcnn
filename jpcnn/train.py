@@ -1,10 +1,12 @@
+import sys
+
 import tensorflow as tf
 tf.enable_eager_execution()
 # fix random seed for reproducibility
 seed = 4
 tf.set_random_seed(seed)
 from jpcnn.config import JPCNNConfig
-from jpcnn.data import get_dataset
+from jpcnn.data import get_dataset, BATCH_SIZE, BUFFER_SIZE
 from jpcnn.dct_utils import flat_compress, flat_reconstruct, basic_compression
 from jpcnn.file_utils import (
     build_checkpoint_file_name,
@@ -47,14 +49,14 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
                             decompressed_images, display = display_images)
 
 
-def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None):
+def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, access_token=None):
     rng = np.random.RandomState(conf.seed)
     noise = rng.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
     noise = flat_compress(noise, conf.compression)
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
 
-    conf, dir_name, do_sync = load_or_save_conf(ckpt_file, conf)
+    conf, dir_name, do_sync = load_or_save_conf(ckpt_file, conf, access_token)
     summary_writer = tf.contrib.summary.create_file_writer("{}/logs".format(dir_name), flush_millis = 10000)
     summary_writer.set_as_default()
 
@@ -188,19 +190,24 @@ if __name__ == "__main__":
     #                         [3,4,5,6],
     #                         [4,5,6,7]])/2.).tolist()
     compression = basic_compression(.5, 3.5, [7, 7])
-    num_test_elements = 5923//256//5
     full_dataset, image_dim = get_dataset(
         basic_test_data = False,
         image_preprocessor = lambda im: flat_compress(im, compression)
     )
+    num_test_elements = BUFFER_SIZE//BATCH_SIZE//5
+    print("Validation Set Size: %s" % num_test_elements)
     val_dataset = full_dataset.take(num_test_elements)
     train_dataset = full_dataset.skip(num_test_elements)
     # train_dataset=full_dataset
     # val_dataset=full_dataset
+    dropbox_access_token = None
+    if len(sys.argv) > 1:
+        dropbox_access_token = sys.argv[1]
+        print("Access Token: %s" % dropbox_access_token)
     train(train_dataset, val_dataset, JPCNNConfig(
         image_dim=image_dim,
         compression = compression,
         seed = seed,
         num_test_elements = num_test_elements
-    ))
+    ), access_token = dropbox_access_token)
     # train(train_dataset, JPCNNConfig(image_dim=image_dim), ckpt_file = "Checkpoint-20181011-004410/params_tmp.ckpt-15")

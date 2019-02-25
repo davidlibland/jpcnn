@@ -16,7 +16,7 @@ def build_checkpoint_file_name(dir, descriptor):
     return "./{}/params_{}.ckpt".format(dir, descriptor)
 
 
-def load_or_save_conf(ckpt_file, conf):
+def load_or_save_conf(ckpt_file, conf, access_token=None):
     from jpcnn.config import JPCNNConfig
     do_down_sync = False
     if ckpt_file is not None:
@@ -32,7 +32,8 @@ def load_or_save_conf(ckpt_file, conf):
         pathlib.Path(root_dir).mkdir(exist_ok = True)
         with open(os.path.join(os.getcwd(), dir_name, "conf.json"), "w") as fp:
             json.dump(asdict(conf), fp)
-    access_token = input("What is your dropbox access token?")
+    if not access_token:
+        access_token = input("What is your dropbox access token?")
     if access_token:
         down_sync, up_sync = setup_dropbox_syncs(
             access_token = access_token,
