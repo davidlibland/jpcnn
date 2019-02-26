@@ -141,7 +141,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             ckpt_name = build_checkpoint_file_name(dir_name, conf.description)
             fp = saver.save(None, ckpt_name, global_step=global_step)
             print("Model Saved at {}".format(fp))
-            # do_sync()
+            if conf.dropbox_sync:
+                do_sync()
 
             # Compute test_set loss:
             total_val_loss = []
