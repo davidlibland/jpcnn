@@ -41,6 +41,7 @@ test_data = np.array([
 
 
 def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_data = False, dtype: str= "float32"):
+    train_labels = None
     if basic_test_data:
         all_images = np.stack([test_data]*batch_size, axis = 0)
         all_images = np.expand_dims(all_images, 3)
@@ -48,7 +49,7 @@ def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_d
     else:
         (all_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
         all_images = all_images.reshape(all_images.shape[0], 28, 28,
-                                            1).astype(dtype) # [train_labels==0,:,:,:]
+                                            1).astype(dtype)  # [train_labels==0,:,:,:]
         # We are normalizing the images to the range of [0, 1]
         # train_images = np.round(train_images / 256).astype(dtype)
         all_images = all_images.astype(dtype)
@@ -70,9 +71,15 @@ def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_d
     if image_preprocessor:
         all_images = image_preprocessor(all_images)
 
+    if train_labels is not None:
+        one_hot_labels = tf.one_hot(train_labels, max(train_labels))
+        dataset = tf.data.Dataset.from_tensor_slices((all_images, one_hot_labels)) \
+            .shuffle(buffer_size) \
+            .batch(batch_size)
+    else:
+        dataset = tf.data.Dataset.from_tensor_slices(all_images) \
+            .shuffle(buffer_size) \
+            .batch(batch_size)
     # return train_images
-    return (tf.data.Dataset.from_tensor_slices(all_images)
-            .shuffle(buffer_size)
-            .batch(batch_size),
-            image_dim,
-            buffer_size)
+
+    return (dataset, image_dim, buffer_size)

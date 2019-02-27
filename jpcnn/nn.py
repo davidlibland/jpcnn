@@ -27,7 +27,7 @@ def get_shape_as_list(x):
 
 
 @add_arg_scope
-def crop2d_layer(x, croppings, counters=None, init=False):
+def crop2d_layer(x, croppings, counters=None, init=False, **kwargs):
     xshape = get_shape_as_list(x)
     ty = croppings[0][0]
     by = croppings[0][1]
@@ -38,13 +38,13 @@ def crop2d_layer(x, croppings, counters=None, init=False):
 
 
 @add_arg_scope
-def pad2d_layer(x, paddings, mode="CONSTANT", counters=None, init=False):
+def pad2d_layer(x, paddings, mode="CONSTANT", counters=None, init=False, **kwargs):
     paddings = list(map(list, paddings))
     return tf.pad(x, [[0, 0]] + paddings + [[0, 0]], mode=mode)
 
 
 @add_arg_scope
-def shift_layer(x, x_shift=0, y_shift=0, counters=None, init=False):
+def shift_layer(x, x_shift=0, y_shift=0, counters=None, init=False, **kwargs):
     nx, px = max(-x_shift, 0), max(x_shift, 0)
     ny, py = max(-y_shift, 0), max(y_shift, 0)
 
@@ -55,7 +55,7 @@ def shift_layer(x, x_shift=0, y_shift=0, counters=None, init=False):
 
 
 @add_arg_scope
-def conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1.):
+def conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., **kwargs):
     name = get_name('conv', counters)
     kernel_size=tuple(kernel_size)
     strides=tuple(strides)
@@ -85,7 +85,7 @@ def conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=No
 
 
 @add_arg_scope
-def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1.):
+def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., **kwargs):
     name = get_name('deconv', counters)
     xshape = get_shape_as_list(x)
     if pad=='SAME':
@@ -118,7 +118,7 @@ def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=
 
 
 @add_arg_scope
-def dense_layer(x, num_units, nonlinearity=None, counters=None, init=False, init_scale=1.):
+def dense_layer(x, num_units, nonlinearity=None, counters=None, init=False, init_scale=1., **kwargs):
     name = get_name('dense', counters)
     with tf.variable_scope(name):
         xshape = get_shape_as_list(x)
@@ -152,7 +152,7 @@ def nin_layer(x, num_units, **kwargs):
 
 
 @add_arg_scope
-def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=False):
+def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=False, **kwargs):
     """A batch normalization layer"""
     name = get_name('batch_norm', counters)
     with tf.variable_scope(name):
@@ -168,7 +168,7 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
 
 
 @add_arg_scope
-def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, **kwargs):
+def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, **kwargs):
     x_shape = get_shape_as_list(x)
     num_filters = x_shape[-1]
 
@@ -180,7 +180,15 @@ def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, drop
         y1 = tf.nn.dropout(y1, keep_prob=1. - dropout_p)
     y2 = conv(y1, num_filters = num_filters * 2, init_scale=0.1)
 
-    # Add extra conditioning here, perhaps
+    # Add conditioning on labels
+    if labels is not None:
+        label_shape = get_shape_as_list(labels)
+        with tf.variable_scope(get_name('conditional_weights', counters)):
+            hw = tf.get_variable('hw', shape=[label_shape[-1], 2 * num_filters], dtype=tf.float32,
+                                 initializer=tf.random_normal_initializer(0, 0.05))
+        if init:
+            hw = hw.initialized_value()
+        y2 += tf.reshape(tf.matmul(labels, hw), [x_shape[0], 1, 1, 2 * num_filters])
 
     y2_a, y2_b = tf.split(y2, 2, 3)
     y3 = y2_a * tf.nn.sigmoid(y2_b)  # gating
@@ -234,7 +242,7 @@ def shift_deconv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=Non
 
 
 @add_arg_scope
-def skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, dropout_p=0.9):
+def skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, dropout_p=0.9, **kwargs):
     if nonlinearity is not None:
         x = nonlinearity(x)
     xshape = get_shape_as_list(x)

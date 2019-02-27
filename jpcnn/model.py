@@ -3,7 +3,7 @@ from tensorflow.contrib.framework import arg_scope
 import jpcnn.nn as nn
 
 
-def model(inputs, num_filters, num_layers, num_resnet=1, dropout_p=0.9, training=True, init=False):
+def model(inputs, labels, num_filters, num_layers, num_resnet=1, dropout_p=0.9, training=True, init=False):
     # Initial layers:
     in_shape = list(map(int, tf.shape(inputs)))
     counters = {}
@@ -25,7 +25,7 @@ def model(inputs, num_filters, num_layers, num_resnet=1, dropout_p=0.9, training
             **kwargs
         )
 
-    with arg_scope(arg_scope_layers, counters=counters, init=init):
+    with arg_scope(arg_scope_layers, counters=counters, init=init, labels=labels):
         inputs = tf.pad(inputs, [[0,0],[0,0],[0,0],[0,1]], "CONSTANT", constant_values=1)  # add channel of ones to distinguish image from padding later on
         u_list = [nn.shift_layer(nn.shift_conv_2D(
             inputs,

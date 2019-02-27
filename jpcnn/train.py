@@ -53,6 +53,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     rng = np.random.RandomState(conf.seed)
     noise = rng.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
     noise = flat_compress(noise, conf.compression)
+    sample_labels = None
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
 
@@ -61,12 +62,20 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     summary_writer.set_as_default()
 
     # Data dependent initialization:
-    for i, images in enumerate(train_dataset):
+    for i, data in enumerate(train_dataset):
+        if isinstance(data, tuple):
+            images, labels = data
+        else:
+            images = data
+            labels = None
         with container.as_default():
             image_var = tf.contrib.eager.Variable(images)
-            model(image_var, training = True, num_layers = conf.num_layers,
+            model(image_var, labels, training = True, num_layers = conf.num_layers,
                   num_filters = conf.num_filters, num_resnet = conf.num_resnet,
                   init = True)
+        # pull sample labels:
+        if i == 0 and labels is not None:
+            sample_labels = labels[:16]
 
     global_step = tf.train.get_or_create_global_step()
     saver = tf.train.Saver(
@@ -81,13 +90,18 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         print("Starting Epoch: {0:d}".format(int(global_step)))
         start = time.time()
         total_train_loss = []
-        for images in train_dataset:
+        for data in train_dataset:
+            if isinstance(data, tuple):
+                images, labels = data
+            else:
+                images = data
+                labels = None
 
             with tf.GradientTape() as gr_tape, container.as_default():
                 image_var = tf.contrib.eager.Variable(images)
                 im_shape = list(map(int, tf.shape(image_var)))
 
-                logits = model(image_var, training = True,
+                logits = model(image_var, labels, training = True,
                                          num_layers=conf.num_layers,
                                          num_filters=conf.num_filters,
                                          num_resnet=conf.num_resnet)
@@ -128,7 +142,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         if int(global_step) % conf.ckpt_interval == 0:
             # display.clear_output(wait=True)
             generate_and_save_images(
-                lambda pred: model(pred, num_layers=conf.num_layers,
+                lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
                                    num_filters=conf.num_filters,
                                    num_resnet=conf.num_resnet),
                 int(global_step),
@@ -146,12 +160,17 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
 
             # Compute test_set loss:
             total_val_loss = []
-            for test_images in val_dataset:
+            for test_data in val_dataset:
+                if isinstance(test_data, tuple):
+                    test_images, test_labels = test_data
+                else:
+                    test_images = test_data
+                    test_labels = None
                 with container.as_default():
                     image_var = tf.contrib.eager.Variable(test_images)
                     im_shape = list(map(int, tf.shape(image_var)))
 
-                    logits = model(image_var, training = False,
+                    logits = model(image_var, test_labels, training = False,
                                              num_layers=conf.num_layers,
                                              num_filters=conf.num_filters,
                                              num_resnet=conf.num_resnet)
@@ -173,7 +192,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         print('Training Loss for epoch {} is {}'.format(int(global_step), np.mean(total_train_loss)))
     # display.clear_output(wait = True)
     generate_and_save_images(
-        lambda pred: model(pred, num_layers=conf.num_layers,
+        lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
                            num_filters=conf.num_filters,
                            num_resnet=conf.num_resnet),
         conf.epochs,
