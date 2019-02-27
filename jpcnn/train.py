@@ -6,7 +6,7 @@ tf.enable_eager_execution()
 seed = 4
 tf.set_random_seed(seed)
 from jpcnn.config import JPCNNConfig
-from jpcnn.data import get_dataset, BATCH_SIZE, BUFFER_SIZE
+from jpcnn.data import get_dataset, BATCH_SIZE
 from jpcnn.dct_utils import flat_compress, flat_reconstruct, basic_compression
 from jpcnn.file_utils import (
     build_checkpoint_file_name,
@@ -147,15 +147,16 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             # Compute test_set loss:
             total_val_loss = []
             for test_images in val_dataset:
-                image_var = tf.contrib.eager.Variable(test_images)
-                im_shape = list(map(int, tf.shape(image_var)))
+                with container.as_default():
+                    image_var = tf.contrib.eager.Variable(test_images)
+                    im_shape = list(map(int, tf.shape(image_var)))
 
-                logits = model(image_var, training = False,
-                                         num_layers=conf.num_layers,
-                                         num_filters=conf.num_filters,
-                                         num_resnet=conf.num_resnet)
+                    logits = model(image_var, training = False,
+                                             num_layers=conf.num_layers,
+                                             num_filters=conf.num_filters,
+                                             num_resnet=conf.num_resnet)
 
-                loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, test_images, [1] * im_shape[-1]))
+                    loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, test_images, [1] * im_shape[-1]))
                 with tf.contrib.summary.always_record_summaries():
                     tf.contrib.summary.scalar("validation loss", loss)
                 total_val_loss.append(loss)
@@ -191,11 +192,12 @@ if __name__ == "__main__":
     #                         [3,4,5,6],
     #                         [4,5,6,7]])/2.).tolist()
     compression = basic_compression(.5, 3.5, [7, 7])
-    full_dataset, image_dim = get_dataset(
+    full_dataset, image_dim, buffer_size = get_dataset(
         basic_test_data = False,
         image_preprocessor = lambda im: flat_compress(im, compression)
     )
-    num_test_elements = BUFFER_SIZE//BATCH_SIZE//5
+    num_test_elements = buffer_size//BATCH_SIZE//5
+    print("Training Set Size: %s" % (buffer_size - num_test_elements*BATCH_SIZE))
     print("Validation Set Size: %s" % num_test_elements)
     val_dataset = full_dataset.take(num_test_elements)
     train_dataset = full_dataset.skip(num_test_elements)

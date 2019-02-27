@@ -4,8 +4,6 @@ import numpy as np
 from jpcnn.image_utils import save_and_display_images
 
 # Globals:
-
-BUFFER_SIZE = 60000
 BATCH_SIZE = 256
 
 # Horizontal white line: nl=1, nr=1, nf=50, lr=1e-2
@@ -43,9 +41,6 @@ test_data = np.array([
 
 
 def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_data = False, dtype: str= "float32"):
-    global BUFFER_SIZE
-    global BATCH_SIZE
-    BATCH_SIZE = batch_size
     if basic_test_data:
         all_images = np.stack([test_data]*batch_size, axis = 0)
         all_images = np.expand_dims(all_images, 3)
@@ -57,7 +52,7 @@ def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_d
         # We are normalizing the images to the range of [0, 1]
         # train_images = np.round(train_images / 256).astype(dtype)
         all_images = all_images.astype(dtype)
-    BUFFER_SIZE = all_images.shape[0]
+    buffer_size = all_images.shape[0]
     assert all_images.shape[1] == all_images.shape[2], "Images should be square"
     image_dim = all_images.shape[1]
     # Normalize images to the range of [0, 1]
@@ -66,8 +61,8 @@ def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_d
     assert image_max > image_min, "Must have nontrivial images"
     if image_max > 1 or image_min < 0:
         all_images = (all_images - image_min)/(image_max - image_min)
-    print("Buffer size: %d" % BUFFER_SIZE)
-    print("Mini Batch size: %d" % BATCH_SIZE)
+    print("Buffer size: %d" % buffer_size)
+    print("Mini Batch size: %d" % batch_size)
     print("Image size: %d" % image_dim)
 
     save_and_display_images(".", "training_sample.png", all_images[:16, :, :, 0])
@@ -77,6 +72,7 @@ def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_d
 
     # return train_images
     return (tf.data.Dataset.from_tensor_slices(all_images)
-            .shuffle(BUFFER_SIZE)
+            .shuffle(buffer_size)
             .batch(batch_size),
-            image_dim)
+            image_dim,
+            buffer_size)
