@@ -77,9 +77,9 @@ def idct(x, axes: List[int]):
 def jpeg_compression(x, strides: List[int], compression):
     """
     Assumes x is of shape [N, H, W, C] (batch, height, width, channels)
-    The output is of shape [N, H/s_h, W/s_w, C'], where strides = [s_h, s_w]
+    The output is of shape [N, H/s_h, W/s_w, C, s_h, s_w],
+    where strides = [s_h, s_w]
     The strides must be divisors of the height and width.
-    # Docstring incorrect: the shape is extended by 2d
     """
     if isinstance(compression, list):
         compression = tf.constant(compression, dtype = tf.float32)
@@ -99,10 +99,7 @@ def jpeg_compression(x, strides: List[int], compression):
 
 def jpeg_reconstruction(x, compression):
     """
-    Assumes x is of shape [N, H, W, C] (batch, height, width, channels)
-    The output is of shape [N, H/s_h, W/s_w, C'], where strides = [s_h, s_w]
-    The strides must be divisors of the height and width.
-    # Docstring incorrect: the shape is shrunk by 2d
+    Approximate inverse to jpeg_compression.
     """
     if isinstance(compression, list):
         compression = tf.constant(compression, dtype = tf.float32)
@@ -118,6 +115,13 @@ def jpeg_reconstruction(x, compression):
 
 
 def flat_compress(x, compression):
+    """
+    Assumes x is of shape [N, H, W, C] (batch, height, width, channels)
+    The resulting array will be of shape [N, H', W', C']
+    where H' = H/s_h, W' = W/s_w, `compression` is of shape (s_h, s_w),
+    and C' is ordered from lowest to highest frequency (cycling through
+    channels on each frequency before moving to the next frequency).
+    """
     strides = get_shape_as_list(compression)
     compressed = jpeg_compression(x, strides, compression)
     compressed_p = tf.transpose(compressed, perm = [0, 1, 2, 5, 3, 4])
@@ -132,6 +136,7 @@ def flat_compress(x, compression):
 
 
 def flat_reconstruct(x, compression):
+    """Approximate inverse to `flat_compress`"""
     strides = get_shape_as_list(compression)
     compressed_length = strides[0] * strides[1]
     in_shape = get_shape_as_list(x)
