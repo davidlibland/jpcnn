@@ -46,9 +46,9 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
             strides = (1, 1),
             shift_types = ["down"]
         ), y_shift = 1) \
-            + nn.shift_layer(nn.lt_shift_conv_2D(
+            + nn.shift_layer(nn.shift_conv_2D(
             inputs,
-            num_filters = num_filters,
+            num_filters = num_filters * num_blocks,
             kernel_size = (2, 1),
             strides = (1, 1),
             shift_types = ["down", "right"]
