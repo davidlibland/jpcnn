@@ -94,7 +94,7 @@ def jpeg_compression(x, strides: List[int], compression):
     quant_qual_reshaped = compression[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, :, :]
     pre_compressed_x = dct_x / quant_qual_reshaped
     compressed_x = tf.round(pre_compressed_x)
-    return tf.transpose(compressed_x, perm = [0, 1, 2, 4, 5, 3])
+    return compressed_x
 
 
 def jpeg_reconstruction(x, compression):
@@ -107,8 +107,7 @@ def jpeg_reconstruction(x, compression):
         "Compression matrix must have positive values"
     quant_qual_reshaped = compression[tf.newaxis, tf.newaxis, tf.newaxis, tf.newaxis, :, :]
 
-    reshaped_x = tf.transpose(x, perm = [0, 1, 2, 5, 3, 4])
-    decompressed_x = reshaped_x * quant_qual_reshaped
+    decompressed_x = x * quant_qual_reshaped
     idct_x = idct(decompressed_x, [-2, -1])
     unpart_width_x = unpartition_axis(idct_x, 2)
     return unpartition_axis(unpart_width_x, 1)
@@ -124,9 +123,8 @@ def flat_compress(x, compression):
     """
     strides = get_shape_as_list(compression)
     compressed = jpeg_compression(x, strides, compression)
-    compressed_p = tf.transpose(compressed, perm = [0, 1, 2, 5, 3, 4])
-    in_shape = get_shape_as_list(compressed_p)
-    freq_ordered = diagonal_flatten(compressed_p)
+    in_shape = get_shape_as_list(compressed)
+    freq_ordered = diagonal_flatten(compressed)
     # freq_ordered goes from lowest to highest frequencies in the last axis
     freq_prioritized = tf.transpose(freq_ordered, perm = [0, 1, 2, 4, 3])
     # freq_prioritized places the frquencies before the channels prior to
@@ -145,8 +143,7 @@ def flat_reconstruct(x, compression):
     reshaped = tf.reshape(x, in_shape[:3] + [compressed_length, channels])
     freq_deprioritized = tf.transpose(reshaped, perm = [0, 1, 2, 4, 3])
     unflattened = undiagonal_flatten(freq_deprioritized, y_shape = pre_compressed_shape)
-    unflattened_p = tf.transpose(unflattened, perm = [0, 1, 2, 4, 5, 3])
-    return jpeg_reconstruction(unflattened_p, compression)
+    return jpeg_reconstruction(unflattened, compression)
 
 
 def basic_compression(

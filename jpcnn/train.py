@@ -14,6 +14,7 @@ from jpcnn.file_utils import (
 )
 from jpcnn.image_utils import save_and_display_images
 from jpcnn.model import model, pixel_cnn_loss
+from jpcnn.nn import get_shape_as_list, assert_finite
 import time
 import numpy as np
 
@@ -52,7 +53,9 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
 def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, access_token=None):
     rng = np.random.RandomState(conf.seed)
     noise = rng.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
-    noise = flat_compress(noise, conf.compression)
+    noise = pre_processor(conf.compression)(noise)
+    comp_shapes = get_shape_as_list(conf.compression)
+    num_blocks = comp_shapes[0] * comp_shapes[1]
     sample_labels = None
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
@@ -72,7 +75,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             image_var = tf.contrib.eager.Variable(images)
             model(image_var, labels, training = True, num_layers = conf.num_layers,
                   num_filters = conf.num_filters, num_resnet = conf.num_resnet,
-                  init = True)
+                  init = True, num_blocks = num_blocks)
         # pull sample labels:
         if i == 0 and labels is not None:
             sample_labels = labels[:16]
@@ -104,22 +107,26 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 logits = model(image_var, labels, training = True,
                                          num_layers=conf.num_layers,
                                          num_filters=conf.num_filters,
-                                         num_resnet=conf.num_resnet)
+                                         num_resnet=conf.num_resnet,
+                                         num_blocks = num_blocks)
 
                 loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, images, [1] * im_shape[-1]))
+                assert_finite(loss)
             with tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar("loss", loss)
             total_train_loss.append(np.array(loss))
             print(float(loss))
-
+            print("trying to compute gradients")
             gradients = gr_tape.gradient(
                 loss,
                 container.trainable_variables()
             )
+            print("done computing gradients")
 
             optimizer.apply_gradients(
                 zip(gradients, container.trainable_variables())
             )
+            print("done applying gradients")
             with tf.contrib.summary.always_record_summaries():
                 def safe_div(x, y):
                     if x is None:
@@ -144,7 +151,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             generate_and_save_images(
                 lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
                                    num_filters=conf.num_filters,
-                                   num_resnet=conf.num_resnet),
+                                   num_resnet=conf.num_resnet,
+                                   num_blocks = num_blocks),
                 int(global_step),
                 noise,
                 container,
@@ -173,7 +181,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                     logits = model(image_var, test_labels, training = False,
                                              num_layers=conf.num_layers,
                                              num_filters=conf.num_filters,
-                                             num_resnet=conf.num_resnet)
+                                             num_resnet=conf.num_resnet,
+                                             num_blocks = num_blocks)
 
                     loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, test_images, [1] * im_shape[-1]))
                 with tf.contrib.summary.always_record_summaries():
@@ -194,7 +203,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     generate_and_save_images(
         lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
                            num_filters=conf.num_filters,
-                           num_resnet=conf.num_resnet),
+                           num_resnet=conf.num_resnet,
+                           num_blocks = num_blocks),
         conf.epochs,
         noise, 
         container,
@@ -202,7 +212,12 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         conf.compression,
         display_images = conf.display_images
     )
-
+def pre_processor(compression):
+    def helper(im):
+        padded_im = tf.pad(im, [[0, 0], [0, 0], [0, 0], [0, 1]], "CONSTANT",
+                           constant_values = 1)  # add channel of ones to distinguish image from padding later on
+        return flat_compress(padded_im, compression)
+    return helper
 
 if __name__ == "__main__":
     # tf.enable_eager_execution()
@@ -213,11 +228,11 @@ if __name__ == "__main__":
     compression = basic_compression(.5, 3.5, [7, 7])
     full_dataset, image_dim, buffer_size = get_dataset(
         basic_test_data = False,
-        image_preprocessor = lambda im: flat_compress(im, compression)
+        image_preprocessor = pre_processor(compression)
     )
     num_test_elements = buffer_size//BATCH_SIZE//5
     print("Training Set Size: %s" % (buffer_size - num_test_elements*BATCH_SIZE))
-    print("Validation Set Size: %s" % num_test_elements)
+    print("Validation Set Size: %s" % num_test_elements*BATCH_SIZE)
     val_dataset = full_dataset.take(num_test_elements)
     train_dataset = full_dataset.skip(num_test_elements)
     # train_dataset=full_dataset
