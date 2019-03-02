@@ -14,7 +14,7 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
                         nn.lt_shift_deconv_2D, nn.lt_nin_layer, nn.lt_skip_layer,
                         nn.slt_dense_layer, nn.slt_nin_layer, nn.shift_conv_2D,
                         nn.shift_deconv_2D, nn.gated_resnet, nn.conv_layer,
-                        nn.deconv_layer]
+                        nn.deconv_layer, nn.dense_layer, nn.nin_layer]
     down_shifted_conv2d = lambda x, **kwargs: nn.shift_conv_2D(
                 x,
                 kernel_size = (2, 3),
@@ -22,7 +22,14 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
                 shift_types = ["down"],
                 **kwargs
     )
-    down_right_shifted_conv2d = lambda x, **kwargs: nn.lt_shift_conv_2D(
+    down_right_shifted_conv2d = lambda x, **kwargs: nn.shift_conv_2D(
+            x,
+            kernel_size = (2, 2),
+            strides = (1, 1),
+            shift_types = ["down", "right"],
+            **kwargs
+        )
+    lt_down_right_shifted_conv2d = lambda x, **kwargs: nn.lt_shift_conv_2D(
             x,
             kernel_size = (2, 2),
             strides = (1, 1),
@@ -52,19 +59,21 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
             kernel_size = (2, 1),
             strides = (1, 1),
             shift_types = ["down", "right"]
-        ), x_shift = 1)\
-            + nn.shift_layer(nn.lt_shift_conv_2D(
-            inputs,
-            num_filters = num_filters,
-            kernel_size = (2, 2),
-            strides = (1, 1),
-            shift_types = ["down", "right"],
-            include_diagonals=False
-        ), x_shift = 1)
-                   ]
+        ),x_shift = 1)]
+        dl_list = [
+            nn.shift_layer(nn.lt_shift_conv_2D(
+                inputs,
+                num_filters = num_filters,
+                kernel_size = (2, 2),
+                strides = (1, 1),
+                shift_types = ["down", "right"],
+                include_diagonals = False
+            ), x_shift = 1) + ul_list[-1]
+        ]
 
         nn.assert_finite(u_list[-1])
         nn.assert_finite(ul_list[-1])
+        nn.assert_finite(dl_list[-1])
 
         # normal pass
         # for merge, upl, uprl in zip(self.merge_feed, self.upward_feed, self.upright_feed):
@@ -75,11 +84,17 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
                     dropout_p = dropout_p,
                     conv = down_shifted_conv2d
                 ))
-                ul_list.append(nn.lt_gated_resnet(
+                ul_list.append(nn.gated_resnet(
                     ul_list[-1],
                     u_list[-1],
                     dropout_p = dropout_p,
                     conv = down_right_shifted_conv2d
+                ))
+                dl_list.append(nn.lt_gated_resnet(
+                    dl_list[-1],
+                    tf.concat([u_list[-1], ul_list[-1]], 3),
+                    dropout_p = dropout_p,
+                    conv = lt_down_right_shifted_conv2d
                 ))
 
                 nn.assert_finite(u_list[-1])
@@ -92,8 +107,15 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
                     strides = (2, 2),
                     shift_types = ["down"]
                 ))
-                ul_list.append(nn.lt_shift_conv_2D(
+                ul_list.append(nn.shift_conv_2D(
                     ul_list[-1],
+                    num_filters = num_filters * num_blocks,
+                    kernel_size = (2, 2),
+                    strides = (2, 2),
+                    shift_types = ["down", "right"]
+                ))
+                dl_list.append(nn.lt_shift_conv_2D(
+                    dl_list[-1],
                     num_filters = num_filters,
                     kernel_size = (2, 2),
                     strides = (2, 2),
@@ -102,9 +124,11 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
 
         u = u_list.pop()
         ul = ul_list.pop()
+        dl = dl_list.pop()
 
         nn.assert_finite(u)
         nn.assert_finite(ul)
+        nn.assert_finite(dl)
         # transpose pass
         # for merge, upl, uprl in zip(self.t_merge_feed, self.t_upward_feed, self.t_upright_feed):
         for i in range(num_layers):
@@ -116,11 +140,17 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
                     dropout_p = dropout_p,
                     conv = down_shifted_conv2d
                 )
-                ul = nn.lt_gated_resnet(
+                ul = nn.gated_resnet(
                     ul,
                     tf.concat([u, ul_list.pop()], 3),
                     dropout_p = dropout_p,
                     conv = down_right_shifted_conv2d
+                )
+                dl = nn.lt_gated_resnet(
+                    dl,
+                    tf.concat([u, ul, dl_list.pop()], 3),
+                    dropout_p = dropout_p,
+                    conv = lt_down_right_shifted_conv2d
                 )
 
                 nn.assert_finite(u)
@@ -133,8 +163,15 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
                     strides = (2, 2),
                     shift_types = ["down"]
                 )
-                ul = nn.lt_shift_deconv_2D(
+                ul = nn.shift_deconv_2D(
                     ul,
+                    num_filters = num_filters * num_blocks,
+                    kernel_size = (2, 2),
+                    strides = (2, 2),
+                    shift_types = ["down", "right"]
+                )
+                dl = nn.lt_shift_deconv_2D(
+                    dl,
                     num_filters = num_filters,
                     kernel_size = (2, 2),
                     strides = (2, 2),
@@ -142,10 +179,12 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
                 )
 
         nn.assert_finite(ul)
+        nn.assert_finite(dl)
         assert len(u_list) == 0, "All u layers should be connected."
         assert len(ul_list) == 0, "All ul layers should be connected."
+        assert len(dl_list) == 0, "All dl layers should be connected."
         logits = nn.lt_nin_layer(
-            ul,
+            dl,
             3 * in_shape[-1] // num_blocks  # 3 per channel
         )
         nn.assert_finite(logits)

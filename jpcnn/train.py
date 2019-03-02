@@ -231,8 +231,8 @@ if __name__ == "__main__":
         image_preprocessor = pre_processor(compression)
     )
     num_test_elements = buffer_size//BATCH_SIZE//5
-    print("Training Set Size: %s" % (buffer_size - num_test_elements*BATCH_SIZE))
-    print("Validation Set Size: %s" % num_test_elements*BATCH_SIZE)
+    print("Training Set Size: %s" % (buffer_size - num_test_elements * BATCH_SIZE))
+    print("Validation Set Size: %s" % (num_test_elements * BATCH_SIZE))
     val_dataset = full_dataset.take(num_test_elements)
     train_dataset = full_dataset.skip(num_test_elements)
     # train_dataset=full_dataset

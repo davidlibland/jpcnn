@@ -86,6 +86,7 @@ def lt_conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity
                 d_scale_init = scale_init
             with tf.control_dependencies([g.assign(g * d_scale_init), b.assign_add(-m_init * d_scale_init)]):
                 x = tf.identity(x)
+                assert_finite(d_scale_init)
                 assert_finite(g)
 
 
@@ -101,9 +102,9 @@ def lt_deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlineari
     name = get_name('lt_deconv', counters)
     xshape = get_shape_as_list(x)
     if pad=='SAME':
-        output_shape = [xshape[0], xshape[1]*strides[0], xshape[2]*strides[1], num_filters]
+        output_shape = [xshape[0], xshape[1]*strides[0], xshape[2]*strides[1], num_filters * num_blocks]
     else:
-        output_shape = [xshape[0], xshape[1]*strides[0] + kernel_size[0]-1, xshape[2]*strides[1] + kernel_size[1]-1, num_filters]
+        output_shape = [xshape[0], xshape[1]*strides[0] + kernel_size[0]-1, xshape[2]*strides[1] + kernel_size[1]-1, num_filters * num_blocks]
     with tf.variable_scope(name):
         V = tf.get_variable(name = "V", shape = kernel_size + (num_filters * num_blocks, xshape[-1]), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
         M = get_block_triangular_mask(num_filters, num_blocks, xshape[-1] // num_blocks, dtype=tf.float32, triangular_type = "lower")[tf.newaxis, tf.newaxis, :, :]
@@ -653,4 +654,5 @@ def get_block_triangular_mask(block_height, num_blocks, block_width, include_dia
 
 
 def assert_finite(x):
-    assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
+    pass
+    # assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
