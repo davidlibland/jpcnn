@@ -3,7 +3,7 @@ from tensorflow.contrib.framework import arg_scope
 import jpcnn.nn as nn
 
 
-def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, dropout_p=0.9, training=True, init=False):
+def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, mixtures_per_channel=1, dropout_p=0.9, training=True, init=False):
     # Initial layers:
     in_shape = list(map(int, tf.shape(inputs)))
     counters = {}
@@ -185,7 +185,7 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, d
         assert len(dl_list) == 0, "All dl layers should be connected."
         logits = nn.lt_nin_layer(
             dl,
-            3 * in_shape[-1] // num_blocks  # 3 per channel
+            mixtures_per_channel * 3 * in_shape[-1] // num_blocks  # 3 per channel
         )
         nn.assert_finite(logits)
         return logits

@@ -24,7 +24,7 @@ from jpcnn.nn import (
 )
 
 
-def generate_and_save_images(model, epoch, test_input, container, root_dir, compression, display_images=False):
+def generate_and_save_images(model, epoch, test_input, container, root_dir, compression, mixtures_per_channel, display_images=False):
     height = test_input.shape[1]
     width = test_input.shape[2]
     channels = test_input.shape[-1]
@@ -34,7 +34,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
         for i in range(width):
             with container.as_default():
                 ij_likelihood = model(predictions)[:, j, i, :]
-            ij_sample = sample_from_discretized_mix_logistic(ij_likelihood, [1] * channels)
+            ij_sample = sample_from_discretized_mix_logistic(ij_likelihood, [mixtures_per_channel] * channels)
             predictions[:,j,i,:] = ij_sample
 
             # crop values to [0,1] interval:
@@ -75,6 +75,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             image_var = tf.contrib.eager.Variable(images)
             model(image_var, labels, training = True, num_layers = conf.num_layers,
                   num_filters = conf.num_filters, num_resnet = conf.num_resnet,
+                  mixtures_per_channel = conf.mixtures_per_channel,
                   init = True, num_blocks = num_blocks)
         # pull sample labels:
         if i == 0 and labels is not None:
@@ -104,13 +105,17 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 image_var = tf.contrib.eager.Variable(images)
                 im_shape = list(map(int, tf.shape(image_var)))
 
-                logits = model(image_var, labels, training = True,
-                                         num_layers=conf.num_layers,
-                                         num_filters=conf.num_filters,
-                                         num_resnet=conf.num_resnet,
-                                         num_blocks = num_blocks)
+                logits = model(image_var, labels,
+                               training = True,
+                               num_layers=conf.num_layers,
+                               num_filters=conf.num_filters,
+                               num_resnet=conf.num_resnet,
+                               num_blocks = num_blocks,
+                               mixtures_per_channel = conf.mixtures_per_channel)
 
-                loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, images, [1] * im_shape[-1]))
+                loss = tf.reduce_mean(discretized_mix_logistic_loss(
+                    logits, images, [conf.mixtures_per_channel] * im_shape[-1])
+                )
                 assert_finite(loss)
             with tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar("loss", loss)
@@ -152,12 +157,14 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
                                    num_filters=conf.num_filters,
                                    num_resnet=conf.num_resnet,
-                                   num_blocks = num_blocks),
+                                   num_blocks = num_blocks,
+                                   mixtures_per_channel = conf.mixtures_per_channel),
                 int(global_step),
                 noise,
                 container,
                 dir_name,
                 conf.compression,
+                conf.mixtures_per_channel,
                 display_images = conf.display_images
             )
             ckpt_name = build_checkpoint_file_name(dir_name, conf.description)
@@ -182,9 +189,14 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                                              num_layers=conf.num_layers,
                                              num_filters=conf.num_filters,
                                              num_resnet=conf.num_resnet,
-                                             num_blocks = num_blocks)
+                                             num_blocks = num_blocks,
+                                             mixtures_per_channel =
+                                             conf.mixtures_per_channel)
 
-                    loss = tf.reduce_mean(discretized_mix_logistic_loss(logits, test_images, [1] * im_shape[-1]))
+                    loss = tf.reduce_mean(discretized_mix_logistic_loss(
+                        logits, test_images,
+                        [conf.mixtures_per_channel] * im_shape[-1])
+                    )
                 with tf.contrib.summary.always_record_summaries():
                     tf.contrib.summary.scalar("validation loss", loss)
                 total_val_loss.append(loss)
@@ -204,12 +216,15 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
                            num_filters=conf.num_filters,
                            num_resnet=conf.num_resnet,
-                           num_blocks = num_blocks),
+                           num_blocks = num_blocks,
+                           mixtures_per_channel =
+                           conf.mixtures_per_channel),
         conf.epochs,
         noise, 
         container,
         dir_name,
         conf.compression,
+        conf.mixtures_per_channel,
         display_images = conf.display_images
     )
 def pre_processor(compression):
