@@ -166,6 +166,12 @@ def basic_compression(
     return compression
 
 
+def mean_inv_compression(compression: List[List[float]]):
+    """Computes the mean of the inverse"""
+    assert min(map(min, compression)) > 0, "Compression must be positive."
+    return np.mean(1. / np.array(compression))
+
+
 def diagonal_flatten(x):
     """
     Traverses the last two axes diagonally from lower left to upper right,

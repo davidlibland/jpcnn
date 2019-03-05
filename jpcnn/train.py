@@ -7,7 +7,10 @@ seed = 4
 tf.set_random_seed(seed)
 from jpcnn.config import JPCNNConfig
 from jpcnn.data import get_dataset, BATCH_SIZE
-from jpcnn.dct_utils import flat_compress, flat_reconstruct, basic_compression
+from jpcnn.dct_utils import (
+    flat_compress, flat_reconstruct, basic_compression,
+    mean_inv_compression,
+)
 from jpcnn.file_utils import (
     build_checkpoint_file_name,
     load_or_save_conf,
@@ -116,11 +119,13 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 loss = tf.reduce_mean(discretized_mix_logistic_loss(
                     logits, images, [conf.mixtures_per_channel] * im_shape[-1])
                 )
+                rescaled_loss = mean_inv_compression(conf.compression) * loss
                 assert_finite(loss)
             with tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar("loss", loss)
-            total_train_loss.append(np.array(loss))
-            print(float(loss))
+                tf.contrib.summary.scalar("rescaled_loss", rescaled_loss)
+            total_train_loss.append(np.array(rescaled_loss))
+            print(float(rescaled_loss))
             print("trying to compute gradients")
             gradients = gr_tape.gradient(
                 loss,
@@ -141,9 +146,6 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                     avg_rel_grad = tf.reduce_mean(valid_grads)
                     if not tf.is_finite(avg_rel_grad):
                         print("error, non finite grad")
-                        # print(x)
-                        # print(y)
-                        # print(avg_rel_grad)
                         return 0
                     return avg_rel_grad
                 # print("Finite Gradients: %s"% tf.reduce_all(tf.is_finite(gradients)))
@@ -197,9 +199,11 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                         logits, test_images,
                         [conf.mixtures_per_channel] * im_shape[-1])
                     )
+                    rescaled_loss = mean_inv_compression(conf.compression) * loss
                 with tf.contrib.summary.always_record_summaries():
                     tf.contrib.summary.scalar("validation loss", loss)
-                total_val_loss.append(loss)
+                    tf.contrib.summary.scalar("rescaled validation loss", rescaled_loss)
+                total_val_loss.append(rescaled_loss)
             avg_val_loss = tf.reduce_mean(total_val_loss)
             print('Validation Loss for epoch {} is {}'.format(int(global_step), avg_val_loss))
 
