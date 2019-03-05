@@ -56,7 +56,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
 def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, access_token=None):
     rng = np.random.RandomState(conf.seed)
     noise = rng.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
-    noise = pre_processor(conf.compression)(noise)
+    noise = image_processors(conf.compression)[0](noise)
     comp_shapes = get_shape_as_list(conf.compression)
     num_blocks = comp_shapes[0] * comp_shapes[1]
     sample_labels = None
@@ -77,9 +77,9 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         with container.as_default():
             image_var = tf.contrib.eager.Variable(images)
             model(image_var, labels, training = True, num_layers = conf.num_layers,
-                  num_filters = conf.num_filters, num_resnet = conf.num_resnet,
+                  avg_num_filters = conf.num_filters, num_resnet = conf.num_resnet,
                   mixtures_per_channel = conf.mixtures_per_channel,
-                  init = True, num_blocks = num_blocks)
+                  init = True, compression = conf.compression)
         # pull sample labels:
         if i == 0 and labels is not None:
             sample_labels = labels[:16]
@@ -111,9 +111,9 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 logits = model(image_var, labels,
                                training = True,
                                num_layers=conf.num_layers,
-                               num_filters=conf.num_filters,
+                               avg_num_filters=conf.num_filters,
                                num_resnet=conf.num_resnet,
-                               num_blocks = num_blocks,
+                               compression = conf.compression,
                                mixtures_per_channel = conf.mixtures_per_channel)
 
                 loss = tf.reduce_mean(discretized_mix_logistic_loss(
@@ -157,9 +157,9 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             # display.clear_output(wait=True)
             generate_and_save_images(
                 lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
-                                   num_filters=conf.num_filters,
+                                   avg_num_filters=conf.num_filters,
                                    num_resnet=conf.num_resnet,
-                                   num_blocks = num_blocks,
+                                   compression=conf.compression,
                                    mixtures_per_channel = conf.mixtures_per_channel),
                 int(global_step),
                 noise,
@@ -189,9 +189,9 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
 
                     logits = model(image_var, test_labels, training = False,
                                              num_layers=conf.num_layers,
-                                             num_filters=conf.num_filters,
+                                             avg_num_filters=conf.num_filters,
                                              num_resnet=conf.num_resnet,
-                                             num_blocks = num_blocks,
+                                             compression=conf.compression,
                                              mixtures_per_channel =
                                              conf.mixtures_per_channel)
 
@@ -218,9 +218,9 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     # display.clear_output(wait = True)
     generate_and_save_images(
         lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
-                           num_filters=conf.num_filters,
+                           avg_num_filters=conf.num_filters,
                            num_resnet=conf.num_resnet,
-                           num_blocks = num_blocks,
+                           compression=conf.compression,
                            mixtures_per_channel =
                            conf.mixtures_per_channel),
         conf.epochs,
@@ -231,23 +231,20 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         conf.mixtures_per_channel,
         display_images = conf.display_images
     )
-def pre_processor(compression):
-    def helper(im):
-        padded_im = tf.pad(im, [[0, 0], [0, 0], [0, 0], [0, 1]], "CONSTANT",
-                           constant_values = 1)  # add channel of ones to distinguish image from padding later on
+def image_processors(compression):
+    def compressor(im):
+        padded_im = im #tf.pad(im, [[0, 0], [0, 0], [0, 0], [0, 1]], "CONSTANT",
+                        #   constant_values = 1)  # add channel of ones to distinguish image from padding later on
         return flat_compress(padded_im, compression)
-    return helper
+    def reconstructor(c_im):
+        return flat_reconstruct(c_im, compression)
+    return compressor, reconstructor
 
 if __name__ == "__main__":
-    # tf.enable_eager_execution()
-    # compression = (np.array([[1,2,3,4],
-    #                         [2,3,4,5],
-    #                         [3,4,5,6],
-    #                         [4,5,6,7]])/2.).tolist()
-    compression = basic_compression(.5, 3.5, [7, 7])
+    compression = basic_compression(.1, .3, [2, 2])
     full_dataset, image_dim, buffer_size = get_dataset(
-        basic_test_data = False,
-        image_preprocessor = pre_processor(compression)
+        basic_test_data = True,
+        image_processors = image_processors(compression)
     )
     num_test_elements = buffer_size//BATCH_SIZE//5
     print("Training Set Size: %s" % (buffer_size - num_test_elements * BATCH_SIZE))

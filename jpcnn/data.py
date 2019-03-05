@@ -40,7 +40,7 @@ test_data = np.array([
 ], dtype=np.float32)
 
 
-def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_data = False, dtype: str= "float32"):
+def get_dataset(batch_size = BATCH_SIZE, image_processors=None, basic_test_data = False, dtype: str= "float32"):
     train_labels = None
     if basic_test_data:
         all_images = np.stack([test_data]*batch_size, axis = 0)
@@ -68,8 +68,10 @@ def get_dataset(batch_size = BATCH_SIZE, image_preprocessor = None, basic_test_d
 
     save_and_display_images(".", "training_sample.png", all_images[:16, :, :, 0])
 
-    if image_preprocessor:
-        all_images = image_preprocessor(all_images)
+    if image_processors:
+        all_images = image_processors[0](all_images)
+
+    save_and_display_images(".", "compressed_training_sample.png", image_processors[1](all_images)[:16, :, :, 0])
 
     if train_labels is not None:
         one_hot_labels = tf.one_hot(train_labels, max(train_labels))

@@ -172,6 +172,15 @@ def mean_inv_compression(compression: List[List[float]]):
     return np.mean(1. / np.array(compression))
 
 
+def get_block_sizes(avg_num_filters, compression):
+    flat_compression = diagonal_flatten(np.array(compression))
+    N = float(tf.size(flat_compression))
+    normalizer = N / sum(1. / cmp for cmp in flat_compression)
+    block_sizes = [int(np.round(normalizer * avg_num_filters / cmp))
+                   for cmp in flat_compression]
+    return block_sizes
+
+
 def diagonal_flatten(x):
     """
     Traverses the last two axes diagonally from lower left to upper right,

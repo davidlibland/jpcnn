@@ -55,19 +55,21 @@ def shift_layer(x, x_shift=0, y_shift=0, counters=None, init=False, **kwargs):
 
 
 @add_arg_scope
-def lt_conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., num_blocks=1, include_diagonals=True, **kwargs):
-    name = get_name('lt_conv', counters)
+def masked_conv_layer(x, block_heights, block_widths, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., include_diagonals=True, **kwargs):
+    name = get_name('masked_conv', counters)
     kernel_size=tuple(kernel_size)
     strides=tuple(strides)
     with tf.variable_scope(name):
         xshape = get_shape_as_list(x)
-        V = tf.get_variable(name = "V", shape = kernel_size + (xshape[-1], num_filters * num_blocks), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
-        M = get_block_triangular_mask(xshape[-1] // num_blocks, num_blocks, num_filters, include_diagonals=include_diagonals, dtype=tf.float32)[tf.newaxis, tf.newaxis, :, :]
-        g = tf.get_variable(name = "g", shape = [num_filters * num_blocks], initializer=tf.constant_initializer(1.), dtype=tf.float32)
-        b = tf.get_variable(name = "b", shape = [num_filters * num_blocks], initializer=tf.constant_initializer(0.), dtype=tf.float32)
+        output_size = sum(block_widths)
+        assert xshape[-1] == sum(block_heights), "mask must be compatibe with input."
+        V = tf.get_variable(name = "V", shape = kernel_size + (xshape[-1], output_size), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
+        M = get_block_triangular_mask(block_heights, block_widths, include_diagonals=include_diagonals, dtype=tf.float32)[tf.newaxis, tf.newaxis, :, :]
+        g = tf.get_variable(name = "g", shape = [output_size], initializer=tf.constant_initializer(1.), dtype=tf.float32)
+        b = tf.get_variable(name = "b", shape = [output_size], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 
         # use weight normalization (Salimans & Kingma, 2016)
-        W = tf.reshape(g, [1, 1, 1, num_filters * num_blocks]) * tf.nn.l2_normalize(V*M, [0, 1, 2])
+        W = tf.reshape(g, [1, 1, 1, output_size]) * tf.nn.l2_normalize(V*M, [0, 1, 2])
 
         assert_finite(g)
         assert_finite(W)
@@ -81,7 +83,7 @@ def lt_conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity
             m_init, v_init = tf.nn.moments(x, [0,1,2])
             scale_init = init_scale / tf.sqrt(v_init + 1e-10)
             if not include_diagonals:
-                d_scale_init = tf.concat([tf.ones([num_filters]), scale_init[num_filters:]], axis=0)
+                d_scale_init = tf.concat([tf.ones(block_widths[0]), scale_init[block_widths[0]:]], axis=0)
             else:
                 d_scale_init = scale_init
             with tf.control_dependencies([g.assign(g * d_scale_init), b.assign_add(-m_init * d_scale_init)]):
@@ -98,21 +100,22 @@ def lt_conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity
 
 
 @add_arg_scope
-def lt_deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., num_blocks=1, **kwargs):
-    name = get_name('lt_deconv', counters)
+def masked_deconv_layer(x, block_heights, block_widths, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., **kwargs):
+    name = get_name('masked_deconv', counters)
     xshape = get_shape_as_list(x)
+    assert xshape[-1] == sum(block_heights), "mask must be compatibe with input."
     if pad=='SAME':
-        output_shape = [xshape[0], xshape[1]*strides[0], xshape[2]*strides[1], num_filters * num_blocks]
+        output_shape = [xshape[0], xshape[1]*strides[0], xshape[2]*strides[1], sum(block_widths)]
     else:
-        output_shape = [xshape[0], xshape[1]*strides[0] + kernel_size[0]-1, xshape[2]*strides[1] + kernel_size[1]-1, num_filters * num_blocks]
+        output_shape = [xshape[0], xshape[1]*strides[0] + kernel_size[0]-1, xshape[2]*strides[1] + kernel_size[1]-1, sum(block_widths)]
     with tf.variable_scope(name):
-        V = tf.get_variable(name = "V", shape = kernel_size + (num_filters * num_blocks, xshape[-1]), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
-        M = get_block_triangular_mask(num_filters, num_blocks, xshape[-1] // num_blocks, dtype=tf.float32, triangular_type = "lower")[tf.newaxis, tf.newaxis, :, :]
-        g = tf.get_variable(name = "g", shape = [num_filters * num_blocks], initializer=tf.constant_initializer(1.), dtype=tf.float32)
-        b = tf.get_variable(name = "b", shape = [num_filters * num_blocks], initializer=tf.constant_initializer(0.), dtype=tf.float32)
+        V = tf.get_variable(name = "V", shape = kernel_size + (output_shape[-1], xshape[-1]), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
+        M = get_block_triangular_mask(output_shape[-1], block_heights, dtype=tf.float32, triangular_type = "lower")[tf.newaxis, tf.newaxis, :, :]
+        g = tf.get_variable(name = "g", shape = output_shape[-1], initializer=tf.constant_initializer(1.), dtype=tf.float32)
+        b = tf.get_variable(name = "b", shape = output_shape[-1], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 
         # use weight normalization (Salimans & Kingma, 2016)
-        W = tf.reshape(g, [1, 1, num_filters * num_blocks, 1]) * tf.nn.l2_normalize(V*M, [0, 1, 3])
+        W = tf.reshape(g, [1, 1, output_shape[-1], 1]) * tf.nn.l2_normalize(V*M, [0, 1, 3])
 
         # calculate convolutional layer output
         x = tf.nn.conv2d_transpose(x, W, output_shape, (1,) + strides + (1,), padding=pad)
@@ -195,48 +198,24 @@ def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=
 
 
 @add_arg_scope
-def slt_dense_layer(x, num_units, nonlinearity=None, counters=None, init=False, init_scale=1., num_blocks=1, **kwargs):
-    name = get_name('slt_dense', counters)
+def masked_dense_layer(x, block_heights, block_widths, nonlinearity=None, counters=None, init=False, init_scale=1., **kwargs):
+    name = get_name('masked_dense', counters)
     with tf.variable_scope(name):
         xshape = get_shape_as_list(x)
-        V = tf.get_variable(name = "V", shape = [xshape[1], num_units * num_blocks], initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
-        M = get_block_triangular_mask(xshape[1] // num_blocks, num_blocks, num_units, include_diagonals = True, dtype=tf.float32)
-        g = tf.get_variable(name = "g", shape = [num_units * num_blocks], initializer=tf.constant_initializer(1.), dtype=tf.float32)
-        b = tf.get_variable(name = "b", shape = [num_units * num_blocks], initializer=tf.constant_initializer(0.), dtype=tf.float32)
+        assert xshape[-1] == sum(block_heights), "mask must be compatible with input. %s, %s" % (xshape[-1], block_heights)
+        output_size = sum(block_widths)
+        V = tf.get_variable(name = "V", shape = [xshape[1], output_size], initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
+        M = get_block_triangular_mask(block_heights, block_widths, include_diagonals = True, dtype=tf.float32)
+        g = tf.get_variable(name = "g", shape = [output_size], initializer=tf.constant_initializer(1.), dtype=tf.float32)
+        b = tf.get_variable(name = "b", shape = [output_size], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 
         # use weight normalization (Salimans & Kingma, 2016)
         x = tf.matmul(x, V*M)
         assert_finite(x)
         scaler = g / tf.sqrt(tf.reduce_sum(tf.square(V * M), [0]))
         assert_finite(scaler)
-        x = tf.reshape(scaler, [1, num_units * num_blocks]) * x + tf.reshape(b, [1, num_units * num_blocks])
+        x = tf.reshape(scaler, [1, output_size]) * x + tf.reshape(b, [1, output_size])
         assert_finite(x)
-
-        if init: # normalize x
-            m_init, v_init = tf.nn.moments(x, [0])
-            scale_init = init_scale/tf.sqrt(v_init + 1e-10)
-            with tf.control_dependencies([g.assign(g*scale_init), b.assign_add(-m_init*scale_init)]):
-                x = tf.identity(x)
-
-        if nonlinearity is not None:
-            x = nonlinearity(x)
-        return x
-
-
-@add_arg_scope
-def lt_dense_layer(x, num_units, nonlinearity=None, counters=None, init=False, init_scale=1., num_blocks=1, **kwargs):
-    name = get_name('lt_dense', counters)
-    with tf.variable_scope(name):
-        xshape = get_shape_as_list(x)
-        V = tf.get_variable(name = "V", shape = [xshape[1], num_units * num_blocks], initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
-        M = get_block_triangular_mask(xshape[1] // num_blocks, num_blocks,  num_units, dtype=tf.float32)
-        g = tf.get_variable(name = "g", shape = [num_units * num_blocks], initializer=tf.constant_initializer(1.), dtype=tf.float32)
-        b = tf.get_variable(name = "b", shape = [num_units * num_blocks], initializer=tf.constant_initializer(0.), dtype=tf.float32)
-
-        # use weight normalization (Salimans & Kingma, 2016)
-        x = tf.matmul(x, V*M)
-        scaler = g / tf.sqrt(tf.reduce_sum(tf.square(V * M), [0]))
-        x = tf.reshape(scaler, [1, num_units * num_blocks]) * x + tf.reshape(b, [1, num_units * num_blocks])
 
         if init: # normalize x
             m_init, v_init = tf.nn.moments(x, [0])
@@ -275,23 +254,12 @@ def dense_layer(x, num_units, nonlinearity=None, counters=None, init=False, init
 
 
 @add_arg_scope
-def lt_nin_layer(x, num_units, num_blocks=1, **kwargs):
+def masked_nin_layer(x, block_heights, block_widths, **kwargs):
     """ a network in network layer (1x1 CONV) """
     xshape = get_shape_as_list(x)
     x = tf.reshape(x, [np.prod(xshape[:-1]), xshape[-1]])
-    x = lt_dense_layer(x, num_units, num_blocks=num_blocks, **kwargs)
-    return tf.reshape(x, xshape[:-1]+[num_units * num_blocks])
-
-
-@add_arg_scope
-def slt_nin_layer(x, num_units, num_blocks=1, **kwargs):
-    """ a network in network layer (1x1 CONV) """
-    xshape = get_shape_as_list(x)
-    x = tf.reshape(x, [np.prod(xshape[:-1]), xshape[-1]])
-    assert_finite(x)
-    x = slt_dense_layer(x, num_units, num_blocks=num_blocks, **kwargs)
-    assert_finite(x)
-    return tf.reshape(x, xshape[:-1]+[num_units * num_blocks])
+    x = masked_dense_layer(x, block_heights=block_heights, block_widths=block_widths, **kwargs)
+    return tf.reshape(x, xshape[:-1]+[sum(block_widths)])
 
 
 @add_arg_scope
@@ -320,32 +288,36 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
 
 
 @add_arg_scope
-def lt_gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, num_blocks=1, **kwargs):
+def masked_gated_resnet(x, a=None, masked_a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, block_sizes=None, **kwargs):
     x_shape = get_shape_as_list(x)
-    num_filters = x_shape[-1] // num_blocks
+    if block_sizes is None:
+        # Assume there is a single block.
+        block_sizes = [x_shape[-1]]
 
-    y1 = conv(nonlinearity(x), num_filters=num_filters, num_blocks=num_blocks)
+    y1 = conv(nonlinearity(x), block_heights=block_sizes, block_widths=block_sizes)
     if a is not None:  # Add short cut connections:
-        y1 += lt_nin_layer(nonlinearity(a), num_filters, num_blocks=num_blocks)
+        y1 += nin_layer(nonlinearity(a), sum(block_sizes))
+    if masked_a is not None:  # Add masked short cut connections:
+        y1 += masked_nin_layer(nonlinearity(masked_a), block_heights=block_sizes, block_widths=block_sizes)
     y1 = nonlinearity(y1)
     if dropout_p > 0:
         y1 = tf.nn.dropout(y1, keep_prob=1. - dropout_p)
-    y2_a = conv(y1, num_filters = num_filters, init_scale=0.1, num_blocks=num_blocks)
-    y2_b = conv(y1, num_filters = num_filters, init_scale=0.1, num_blocks=num_blocks)
+    y2_a = conv(y1, init_scale=0.1, block_heights=block_sizes, block_widths=block_sizes)
+    y2_b = conv(y1, init_scale=0.1, block_heights=block_sizes, block_widths=block_sizes)
 
     # Add conditioning on labels
     if labels is not None:
         label_shape = get_shape_as_list(labels)
         with tf.variable_scope(get_name('conditional_weights', counters)):
-            hw_a = tf.get_variable('hw', shape=[label_shape[-1], num_filters * num_blocks], dtype=tf.float32,
+            hw_a = tf.get_variable('hw', shape=[label_shape[-1], sum(block_sizes)], dtype=tf.float32,
                                  initializer=tf.random_normal_initializer(0, 0.05))
-            hw_b = tf.get_variable('hw', shape=[label_shape[-1], num_filters * num_blocks], dtype=tf.float32,
+            hw_b = tf.get_variable('hw', shape=[label_shape[-1], sum(block_sizes)], dtype=tf.float32,
                                  initializer=tf.random_normal_initializer(0, 0.05))
         if init:
             hw_a = hw_a.initialized_value()
             hw_b = hw_b.initialized_value()
-        y2_a += tf.reshape(tf.matmul(labels, hw_a), [x_shape[0], 1, 1, num_filters * num_blocks])
-        y2_b += tf.reshape(tf.matmul(labels, hw_b), [x_shape[0], 1, 1, num_filters * num_blocks])
+        y2_a += tf.reshape(tf.matmul(labels, hw_a), [x_shape[0], 1, 1, sum(block_sizes)])
+        y2_b += tf.reshape(tf.matmul(labels, hw_b), [x_shape[0], 1, 1, sum(block_sizes)])
 
     y3 = y2_a * tf.nn.sigmoid(y2_b)  # gating
     return x + y3
@@ -379,7 +351,7 @@ def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, drop
 
 
 @add_arg_scope
-def lt_shift_conv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=None, counters=None, include_diagonals=True, **kwargs):
+def masked_shift_conv_2D(x, block_heights, block_widths, kernel_size, strides=(1, 1), shift_types=None, counters=None, include_diagonals=True, **kwargs):
     if shift_types is None:
         shift_types = []
     if "down" in shift_types:
@@ -396,13 +368,13 @@ def lt_shift_conv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=No
         pad_x = (int((kernel_size[1]-1)/2), int((kernel_size[1]-1)/2))
 
     pad_x = pad2d_layer(x, paddings=[pad_y, pad_x], mode="CONSTANT")
-    conv_x = lt_conv_layer(pad_x, num_filters, kernel_size, strides, pad= "VALID", include_diagonals=include_diagonals, **kwargs)
+    conv_x = masked_conv_layer(pad_x, block_heights, block_widths, kernel_size, strides, pad= "VALID", include_diagonals=include_diagonals, **kwargs)
 
     return conv_x
 
 
 @add_arg_scope
-def lt_shift_deconv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=None, counters=None, **kwargs):
+def masked_shift_deconv_2D(x, block_heights, block_widths, kernel_size, strides=(1, 1), shift_types=None, counters=None, **kwargs):
     if shift_types is None:
         shift_types = []
     if "down" in shift_types:
@@ -417,7 +389,7 @@ def lt_shift_deconv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=
         crop_x = (kernel_size[1]-1, 0)
     else:
         crop_x = (int((kernel_size[1]-1)/2), int((kernel_size[1]-1)/2))
-    deconv_x = lt_deconv_layer(x, num_filters, kernel_size, strides, pad= "VALID", **kwargs)
+    deconv_x = masked_deconv_layer(x, block_heights, block_widths, kernel_size, strides, pad= "VALID", **kwargs)
     crop_x = crop2d_layer(deconv_x, croppings=(crop_y, crop_x))
 
     return crop_x
@@ -470,11 +442,10 @@ def shift_deconv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=Non
 
 
 @add_arg_scope
-def lt_skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, dropout_p=0.9, num_blocks=1, **kwargs):
+def masked_skip_layer(x, y, block_heights, block_widths, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, dropout_p=0.9, **kwargs):
     if nonlinearity is not None:
         x = nonlinearity(x)
-    xshape = get_shape_as_list(x)
-    c2 = lt_nin_layer(y, xshape[-1], nonlinearity=nonlinearity, num_units=num_blocks)
+    c2 = masked_nin_layer(y, block_heights=block_heights, block_widths=block_widths, nonlinearity=nonlinearity)
 
     return x + c2
 
@@ -629,30 +600,24 @@ def log_expm1(x):
 
 # Helpers:
 
-def get_triangular_mask(shape, include_diagonals=True, triangular_type="upper", dtype=tf.float32):
+def get_block_triangular_mask(block_heights, block_widths, include_diagonals=True, triangular_type="upper", dtype=tf.float32):
     """Assumes that shape is 2-dim"""
+    assert len(block_heights) == len(block_widths), "An equal number of heights and widths must be given."
     if triangular_type.lower() == "lower":
-        return tf.transpose(get_triangular_mask(list(reversed(shape)), include_diagonals=include_diagonals, triangular_type="upper", dtype=dtype))
+        return tf.transpose(get_block_triangular_mask(block_widths, block_heights, include_diagonals=include_diagonals, triangular_type="upper", dtype=dtype))
+    num_blocks = len(block_heights)
+    shape = lambda i, j: [block_heights[i], block_widths[j]]
+    ones = lambda i, j: np.ones(shape(i, j))
+    zeros = lambda i, j: np.zeros(shape(i, j))
     if include_diagonals:
-        return tf.constant(
-            [[1 if i<=j else 0 for j in range(shape[1])]
-             for i in range(shape[0])],
+        return tf.constant(np.block(
+            [[ones(i,j) if i<=j else zeros(i,j) for j in range(num_blocks)]
+             for i in range(num_blocks)]), dtype=dtype)
+    return tf.constant(np.block(
+        [[ones(i,j) if i<j else zeros(i,j) for j in range(num_blocks)]
+         for i in range(num_blocks)]),
         dtype=dtype)
-    return tf.constant(
-        [[1 if i<j else 0 for j in range(shape[1])] for i in range(shape[0])],
-        dtype=dtype
-    )
-
-
-def get_block_triangular_mask(block_height, num_blocks, block_width, include_diagonals=True, triangular_type="upper", dtype=tf.float32):
-    if triangular_type.lower() == "lower":
-        return tf.transpose(get_block_triangular_mask(block_width, num_blocks, block_height, include_diagonals=include_diagonals, triangular_type="upper", dtype=dtype))
-    lt_matrix = get_triangular_mask([num_blocks, num_blocks], include_diagonals, dtype=dtype)
-    h_stack = tf.stack([lt_matrix] * block_height, axis=1)
-    v_stack = tf.stack([h_stack] * block_width, axis=3)
-    return tf.reshape(v_stack, [block_height * num_blocks, num_blocks * block_width])
-
 
 def assert_finite(x):
-    pass
-    # assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
+    # pass
+    assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x

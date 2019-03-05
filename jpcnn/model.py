@@ -1,18 +1,26 @@
 import tensorflow as tf
 from tensorflow.contrib.framework import arg_scope
 import jpcnn.nn as nn
+from jpcnn.dct_utils import get_block_sizes
 
 
-def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, mixtures_per_channel=1, dropout_p=0.9, training=True, init=False):
+def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression=None, mixtures_per_channel=1, dropout_p=0.9, training=True, init=False):
+    # Set up params for masking:
+    assert compression is not None, "Compression needs to be passed to the model"
+    block_sizes = get_block_sizes(avg_num_filters, compression)
+    block_heights = block_sizes
+    block_widths = block_heights
+    num_filters = sum(block_sizes)
+
     # Initial layers:
     in_shape = list(map(int, tf.shape(inputs)))
     counters = {}
     if not training:
         dropout_p = 0
-    arg_scope_layers = [nn.lt_conv_layer, nn.lt_deconv_layer, nn.lt_gated_resnet,
-                        nn.lt_dense_layer, nn.shift_layer, nn.lt_shift_conv_2D,
-                        nn.lt_shift_deconv_2D, nn.lt_nin_layer, nn.lt_skip_layer,
-                        nn.slt_dense_layer, nn.slt_nin_layer, nn.shift_conv_2D,
+    arg_scope_layers = [nn.masked_conv_layer, nn.masked_deconv_layer, nn.masked_gated_resnet,
+                        nn.masked_dense_layer, nn.shift_layer, nn.masked_shift_conv_2D,
+                        nn.masked_shift_deconv_2D, nn.masked_nin_layer, nn.masked_skip_layer,
+                        nn.masked_dense_layer, nn.masked_nin_layer, nn.shift_conv_2D,
                         nn.shift_deconv_2D, nn.gated_resnet, nn.conv_layer,
                         nn.deconv_layer, nn.dense_layer, nn.nin_layer]
     down_shifted_conv2d = lambda x, **kwargs: nn.shift_conv_2D(
@@ -29,7 +37,7 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, m
             shift_types = ["down", "right"],
             **kwargs
         )
-    lt_down_right_shifted_conv2d = lambda x, **kwargs: nn.lt_shift_conv_2D(
+    masked_down_right_shifted_conv2d = lambda x, **kwargs: nn.masked_shift_conv_2D(
             x,
             kernel_size = (2, 2),
             strides = (1, 1),
@@ -37,33 +45,34 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, m
             **kwargs
         )
 
-    with arg_scope(arg_scope_layers, counters=counters, init=init, labels=labels, num_blocks=num_blocks):
+    with arg_scope(arg_scope_layers, counters=counters, init=init, labels=labels):
         #inputs = tf.pad(inputs, [[0,0],[0,0],[0,0],[0,1]], "CONSTANT", constant_values=1)  # add channel of ones to distinguish image from padding later on
         u_list = [nn.shift_layer(nn.shift_conv_2D(
             inputs,
-            num_filters = num_filters * num_blocks,
+            num_filters = num_filters,
             kernel_size = (2, 3),
             strides = (1, 1),
             shift_types = ["down"],
         ), y_shift = 1)]
         ul_list = [nn.shift_layer(nn.shift_conv_2D(
             inputs,
-            num_filters = num_filters * num_blocks,
+            num_filters = num_filters,
             kernel_size = (1, 3),
             strides = (1, 1),
             shift_types = ["down"]
         ), y_shift = 1) \
             + nn.shift_layer(nn.shift_conv_2D(
             inputs,
-            num_filters = num_filters * num_blocks,
+            num_filters = num_filters,
             kernel_size = (2, 1),
             strides = (1, 1),
             shift_types = ["down", "right"]
         ),x_shift = 1)]
         dl_list = [
-            nn.shift_layer(nn.lt_shift_conv_2D(
+            nn.shift_layer(nn.masked_shift_conv_2D(
                 inputs,
-                num_filters = num_filters,
+                block_heights = in_shape[-1]*[1],
+                block_widths = block_widths,
                 kernel_size = (2, 2),
                 strides = (1, 1),
                 shift_types = ["down", "right"],
@@ -90,11 +99,12 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, m
                     dropout_p = dropout_p,
                     conv = down_right_shifted_conv2d
                 ))
-                dl_list.append(nn.lt_gated_resnet(
+                dl_list.append(nn.masked_gated_resnet(
                     dl_list[-1],
                     tf.concat([u_list[-1], ul_list[-1]], 3),
                     dropout_p = dropout_p,
-                    conv = lt_down_right_shifted_conv2d
+                    block_sizes = block_sizes,
+                    conv = masked_down_right_shifted_conv2d
                 ))
 
                 nn.assert_finite(u_list[-1])
@@ -102,20 +112,22 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, m
             if i != num_layers-1:
                 u_list.append(nn.shift_conv_2D(
                     u_list[-1],
-                    num_filters = num_filters * num_blocks,
+                    num_filters = num_filters,
                     kernel_size = (2, 3),
                     strides = (2, 2),
                     shift_types = ["down"]
                 ))
                 ul_list.append(nn.shift_conv_2D(
                     ul_list[-1],
-                    num_filters = num_filters * num_blocks,
+                    num_filters = num_filters,
                     kernel_size = (2, 2),
                     strides = (2, 2),
                     shift_types = ["down", "right"]
                 ))
-                dl_list.append(nn.lt_shift_conv_2D(
+                dl_list.append(nn.masked_shift_conv_2D(
                     dl_list[-1],
+                    block_widths = block_widths,
+                    block_heights = block_heights,
                     num_filters = num_filters,
                     kernel_size = (2, 2),
                     strides = (2, 2),
@@ -146,11 +158,13 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, m
                     dropout_p = dropout_p,
                     conv = down_right_shifted_conv2d
                 )
-                dl = nn.lt_gated_resnet(
+                dl = nn.masked_gated_resnet(
                     dl,
-                    tf.concat([u, ul, dl_list.pop()], 3),
+                    a = tf.concat([u, ul], 3),
+                    masked_a = dl_list.pop(),
+                    block_sizes = block_sizes,
                     dropout_p = dropout_p,
-                    conv = lt_down_right_shifted_conv2d
+                    conv = masked_down_right_shifted_conv2d
                 )
 
                 nn.assert_finite(u)
@@ -158,21 +172,22 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, m
             if i != num_layers-1:
                 u = nn.shift_deconv_2D(
                     u,
-                    num_filters = num_filters * num_blocks,
+                    num_filters = num_filters,
                     kernel_size = (2, 3),
                     strides = (2, 2),
                     shift_types = ["down"]
                 )
                 ul = nn.shift_deconv_2D(
                     ul,
-                    num_filters = num_filters * num_blocks,
+                    num_filters = num_filters,
                     kernel_size = (2, 2),
                     strides = (2, 2),
                     shift_types = ["down", "right"]
                 )
-                dl = nn.lt_shift_deconv_2D(
+                dl = nn.masked_shift_deconv_2D(
                     dl,
-                    num_filters = num_filters,
+                    block_heights = block_heights,
+                    block_widths = block_widths,
                     kernel_size = (2, 2),
                     strides = (2, 2),
                     shift_types = ["down", "right"]
@@ -183,9 +198,12 @@ def model(inputs, labels, num_filters, num_layers, num_resnet=1, num_blocks=1, m
         assert len(u_list) == 0, "All u layers should be connected."
         assert len(ul_list) == 0, "All ul layers should be connected."
         assert len(dl_list) == 0, "All dl layers should be connected."
-        logits = nn.lt_nin_layer(
+        # Each mixture should have 3 params,
+        final_block_widths = [ 3 * mixtures_per_channel for _ in block_sizes]
+        logits = nn.masked_nin_layer(
             dl,
-            mixtures_per_channel * 3 * in_shape[-1] // num_blocks  # 3 per channel
+            block_heights = block_heights,
+            block_widths = final_block_widths,
         )
         nn.assert_finite(logits)
         return logits
