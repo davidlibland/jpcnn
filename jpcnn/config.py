@@ -6,7 +6,7 @@ from typing import List
 class JPCNNConfig:
     image_dim: int
     num_layers: int=1
-    num_resnet: int=8
+    num_resnet: int=6
     avg_num_filters: int=8
     mixtures_per_channel: int=2
     lr: float=1e-3

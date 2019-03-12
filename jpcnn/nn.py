@@ -619,5 +619,5 @@ def get_block_triangular_mask(block_heights, block_widths, include_diagonals=Tru
         dtype=dtype)
 
 def assert_finite(x):
-    # pass
-    assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
+    pass
+    # assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
