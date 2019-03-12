@@ -71,7 +71,7 @@ def get_dataset(batch_size = BATCH_SIZE, image_processors=None, basic_test_data 
     if image_processors:
         all_images = image_processors[0](all_images)
 
-    save_and_display_images(".", "compressed_training_sample.png", image_processors[1](all_images)[:16, :, :, 0])
+    save_and_display_images(".", "compressed_training_sample.png", image_processors[1](all_images[:16, :, :, :])[:16, :, :, 0])
 
     if train_labels is not None:
         one_hot_labels = tf.one_hot(train_labels, max(train_labels))
@@ -82,6 +82,5 @@ def get_dataset(batch_size = BATCH_SIZE, image_processors=None, basic_test_data 
         dataset = tf.data.Dataset.from_tensor_slices(all_images) \
             .shuffle(buffer_size) \
             .batch(batch_size)
-    # return train_images
 
     return (dataset, image_dim, buffer_size)

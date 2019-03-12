@@ -5,9 +5,9 @@ from typing import List
 @dataclass
 class JPCNNConfig:
     image_dim: int
-    num_layers: int=2
-    num_resnet: int=2
-    num_filters: int=2
+    num_layers: int=1
+    num_resnet: int=8
+    avg_num_filters: int=8
     mixtures_per_channel: int=2
     lr: float=1e-3
     epochs: int=500

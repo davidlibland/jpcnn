@@ -77,7 +77,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         with container.as_default():
             image_var = tf.contrib.eager.Variable(images)
             model(image_var, labels, training = True, num_layers = conf.num_layers,
-                  avg_num_filters = conf.num_filters, num_resnet = conf.num_resnet,
+                  avg_num_filters = conf.avg_num_filters, num_resnet = conf.num_resnet,
                   mixtures_per_channel = conf.mixtures_per_channel,
                   init = True, compression = conf.compression)
         # pull sample labels:
@@ -111,7 +111,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 logits = model(image_var, labels,
                                training = True,
                                num_layers=conf.num_layers,
-                               avg_num_filters=conf.num_filters,
+                               avg_num_filters=conf.avg_num_filters,
                                num_resnet=conf.num_resnet,
                                compression = conf.compression,
                                mixtures_per_channel = conf.mixtures_per_channel)
@@ -157,7 +157,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             # display.clear_output(wait=True)
             generate_and_save_images(
                 lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
-                                   avg_num_filters=conf.num_filters,
+                                   avg_num_filters=conf.avg_num_filters,
                                    num_resnet=conf.num_resnet,
                                    compression=conf.compression,
                                    mixtures_per_channel = conf.mixtures_per_channel),
@@ -189,7 +189,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
 
                     logits = model(image_var, test_labels, training = False,
                                              num_layers=conf.num_layers,
-                                             avg_num_filters=conf.num_filters,
+                                             avg_num_filters=conf.avg_num_filters,
                                              num_resnet=conf.num_resnet,
                                              compression=conf.compression,
                                              mixtures_per_channel =
@@ -218,7 +218,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     # display.clear_output(wait = True)
     generate_and_save_images(
         lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
-                           avg_num_filters=conf.num_filters,
+                           avg_num_filters=conf.avg_num_filters,
                            num_resnet=conf.num_resnet,
                            compression=conf.compression,
                            mixtures_per_channel =
@@ -241,7 +241,7 @@ def image_processors(compression):
     return compressor, reconstructor
 
 if __name__ == "__main__":
-    compression = basic_compression(.1, .3, [2, 2])
+    compression = basic_compression(.1, 1., [7, 7])
     full_dataset, image_dim, buffer_size = get_dataset(
         basic_test_data = True,
         image_processors = image_processors(compression)
@@ -251,8 +251,6 @@ if __name__ == "__main__":
     print("Validation Set Size: %s" % (num_test_elements * BATCH_SIZE))
     val_dataset = full_dataset.take(num_test_elements)
     train_dataset = full_dataset.skip(num_test_elements)
-    # train_dataset=full_dataset
-    # val_dataset=full_dataset
     dropbox_access_token = None
     if len(sys.argv) > 1:
         dropbox_access_token = sys.argv[1]

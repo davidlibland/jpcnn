@@ -7,13 +7,7 @@ from jpcnn.dct_utils import get_block_sizes
 def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression=None, mixtures_per_channel=1, dropout_p=0.9, training=True, init=False):
     # Set up params for masking:
     assert compression is not None, "Compression needs to be passed to the model"
-    block_sizes = get_block_sizes(avg_num_filters, compression)
-    block_heights = block_sizes
-    block_widths = block_heights
-    num_filters = sum(block_sizes)
 
-    # Initial layers:
-    in_shape = list(map(int, tf.shape(inputs)))
     counters = {}
     if not training:
         dropout_p = 0
@@ -46,7 +40,16 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
         )
 
     with arg_scope(arg_scope_layers, counters=counters, init=init, labels=labels):
-        #inputs = tf.pad(inputs, [[0,0],[0,0],[0,0],[0,1]], "CONSTANT", constant_values=1)  # add channel of ones to distinguish image from padding later on
+        # add channel of ones to distinguish image from padding later on
+        inputs = tf.pad(inputs, [[0,0],[0,0],[0,0],[1,0]], "CONSTANT", constant_values=1)
+        block_sizes = get_block_sizes(avg_num_filters, compression)
+        extended_block_sizes = [1] + block_sizes # add extra block for the channel of ones.
+        block_heights = extended_block_sizes
+        block_widths = extended_block_sizes
+        num_filters = sum(extended_block_sizes)
+
+        # Initial layers:
+        in_shape = list(map(int, tf.shape(inputs)))
         u_list = [nn.shift_layer(nn.shift_conv_2D(
             inputs,
             num_filters = num_filters,
@@ -103,7 +106,7 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
                     dl_list[-1],
                     tf.concat([u_list[-1], ul_list[-1]], 3),
                     dropout_p = dropout_p,
-                    block_sizes = block_sizes,
+                    block_sizes = extended_block_sizes,
                     conv = masked_down_right_shifted_conv2d
                 ))
 
@@ -162,7 +165,7 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
                     dl,
                     a = tf.concat([u, ul], 3),
                     masked_a = dl_list.pop(),
-                    block_sizes = block_sizes,
+                    block_sizes = extended_block_sizes,
                     dropout_p = dropout_p,
                     conv = masked_down_right_shifted_conv2d
                 )
@@ -199,12 +202,14 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
         assert len(ul_list) == 0, "All ul layers should be connected."
         assert len(dl_list) == 0, "All dl layers should be connected."
         # Each mixture should have 3 params,
-        final_block_widths = [ 3 * mixtures_per_channel for _ in block_sizes]
+        final_block_widths = [ 3 * mixtures_per_channel for _ in extended_block_sizes]
         logits = nn.masked_nin_layer(
             dl,
             block_heights = block_heights,
             block_widths = final_block_widths,
         )
+        # drop the additional channel of ones
+        logits = logits[:,:,:,3 * mixtures_per_channel:]
         nn.assert_finite(logits)
         return logits
 
