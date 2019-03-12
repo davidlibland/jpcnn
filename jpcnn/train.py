@@ -126,17 +126,14 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 tf.contrib.summary.scalar("rescaled_loss", rescaled_loss)
             total_train_loss.append(np.array(rescaled_loss))
             print(float(rescaled_loss))
-            print("trying to compute gradients")
             gradients = gr_tape.gradient(
                 loss,
                 container.trainable_variables()
             )
-            print("done computing gradients")
 
             optimizer.apply_gradients(
                 zip(gradients, container.trainable_variables())
             )
-            print("done applying gradients")
             with tf.contrib.summary.always_record_summaries():
                 def safe_div(x, y):
                     if x is None:
