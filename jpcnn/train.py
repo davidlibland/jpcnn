@@ -243,7 +243,7 @@ def image_processors(compression):
 if __name__ == "__main__":
     compression = basic_compression(.1, 1., [7, 7])
     full_dataset, image_dim, buffer_size = get_dataset(
-        basic_test_data = True,
+        basic_test_data = False,
         image_processors = image_processors(compression)
     )
     num_test_elements = buffer_size//BATCH_SIZE//5
