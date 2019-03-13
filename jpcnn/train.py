@@ -27,38 +27,48 @@ from jpcnn.nn import (
 )
 
 
-def generate_and_save_images(model, epoch, test_input, container, root_dir, compression, mixtures_per_channel, display_images=False):
+def generate_and_save_images(model, epoch, test_input, container, root_dir, compression, mixtures_per_channel, display_images=False, one_hot_sample_labels: np.ndarray=None):
     height = test_input.shape[1]
     width = test_input.shape[2]
     channels = test_input.shape[-1]
+    num_frequencies = np.array(compression).size
+    chan_per_freq = channels//num_frequencies
     predictions = np.zeros_like(test_input)
     cap_adjustments = []
+    if one_hot_sample_labels is not None:
+        sample_labels = np.argmax(one_hot_sample_labels, axis = 1)
+    else:
+        sample_labels = None
     for j in range(height):
         for i in range(width):
-            with container.as_default():
-                ij_likelihood = model(predictions)[:, j, i, :]
-            ij_sample = sample_from_discretized_mix_logistic(ij_likelihood, [mixtures_per_channel] * channels)
-            predictions[:,j,i,:] = ij_sample
+            for k in range(num_frequencies):
+                block_start = k*chan_per_freq*mixtures_per_channel*3
+                block_end = (k+1)*chan_per_freq*mixtures_per_channel*3
 
-            # crop values to [0,1] interval:
+                with container.as_default():
+                    full_pred = model(predictions)
+                    ijk_likelihood = full_pred[:, j, i, block_start: block_end]
+                ijk_sample = sample_from_discretized_mix_logistic(ijk_likelihood, [mixtures_per_channel] * chan_per_freq)
+                predictions[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq] = ijk_sample
+
+                # crop values to [0,1] interval:
             reconstruction = flat_reconstruct(predictions, compression)
             capped_sample = tf.maximum(tf.minimum(reconstruction, 1), 0)
             recompression = flat_compress(capped_sample, compression)
-            cap_adjustments.append(float(tf.reduce_max(tf.abs(ij_sample - recompression[:,j,i,:]))))
+            cap_adjustments.append(float(tf.reduce_max(tf.abs(predictions[:,j,i,:] - recompression[:,j,i,:]))))
             predictions[:,j,i,:] = recompression[:,j,i,:]
 
     print("Cap adjustment: %s" % max(cap_adjustments))
     decompressed_images = flat_reconstruct(predictions, compression)[:, :, :, 0]
     save_and_display_images(root_dir, 'image_at_epoch_{:04d}.png'.format(epoch),
-                            decompressed_images, display = display_images)
+                            decompressed_images, display = display_images,
+                            sample_labels=sample_labels)
 
 
 def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, access_token=None):
     rng = np.random.RandomState(conf.seed)
     noise = rng.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
     noise = image_processors(conf.compression)[0](noise)
-    comp_shapes = get_shape_as_list(conf.compression)
-    num_blocks = comp_shapes[0] * comp_shapes[1]
     sample_labels = None
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
@@ -164,7 +174,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 dir_name,
                 conf.compression,
                 conf.mixtures_per_channel,
-                display_images = conf.display_images
+                display_images = conf.display_images,
+                one_hot_sample_labels=sample_labels
             )
             ckpt_name = build_checkpoint_file_name(dir_name, conf.description)
             fp = saver.save(None, ckpt_name, global_step=global_step)
@@ -226,13 +237,12 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         dir_name,
         conf.compression,
         conf.mixtures_per_channel,
-        display_images = conf.display_images
+        display_images = conf.display_images,
+        one_hot_sample_labels=sample_labels
     )
 def image_processors(compression):
     def compressor(im):
-        padded_im = im #tf.pad(im, [[0, 0], [0, 0], [0, 0], [0, 1]], "CONSTANT",
-                        #   constant_values = 1)  # add channel of ones to distinguish image from padding later on
-        return flat_compress(padded_im, compression)
+        return flat_compress(im, compression)
     def reconstructor(c_im):
         return flat_reconstruct(c_im, compression)
     return compressor, reconstructor
