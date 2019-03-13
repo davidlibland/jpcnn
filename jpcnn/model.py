@@ -43,7 +43,7 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
         # add channel of ones to distinguish image from padding later on
         inputs = tf.pad(inputs, [[0,0],[0,0],[0,0],[1,0]], "CONSTANT", constant_values=1)
         block_sizes = get_block_sizes(avg_num_filters, compression)
-        extended_block_sizes = [1] + block_sizes # add extra block for the channel of ones.
+        extended_block_sizes = [1] + block_sizes  # add extra block for the channel of ones.
         block_heights = extended_block_sizes
         block_widths = extended_block_sizes
         num_filters = sum(extended_block_sizes)
@@ -72,7 +72,7 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
             shift_types = ["down", "right"]
         ),x_shift = 1)]
         dl_list = [
-            nn.shift_layer(nn.masked_shift_conv_2D(
+            nn.masked_shift_conv_2D(
                 inputs,
                 block_heights = in_shape[-1]*[1],
                 block_widths = block_widths,
@@ -80,7 +80,7 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
                 strides = (1, 1),
                 shift_types = ["down", "right"],
                 include_diagonals = False
-            ), x_shift = 1) + ul_list[-1]
+            ) + ul_list[-1]
         ]
 
         nn.assert_finite(u_list[-1])
@@ -202,14 +202,16 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
         assert len(ul_list) == 0, "All ul layers should be connected."
         assert len(dl_list) == 0, "All dl layers should be connected."
         # Each mixture should have 3 params,
-        final_block_widths = [ 3 * mixtures_per_channel for _ in extended_block_sizes]
+        final_block_widths = [0] + [ 3 * mixtures_per_channel for _ in block_sizes]
         logits = nn.masked_nin_layer(
             dl,
             block_heights = block_heights,
             block_widths = final_block_widths,
         )
-        # drop the additional channel of ones
-        logits = logits[:,:,:,3 * mixtures_per_channel:]
+        logits += nn.nin_layer(
+            ul,
+            num_units=sum(final_block_widths)
+        )
         nn.assert_finite(logits)
         return logits
 

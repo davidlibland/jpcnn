@@ -110,7 +110,7 @@ def masked_deconv_layer(x, block_heights, block_widths, kernel_size, strides, pa
         output_shape = [xshape[0], xshape[1]*strides[0] + kernel_size[0]-1, xshape[2]*strides[1] + kernel_size[1]-1, sum(block_widths)]
     with tf.variable_scope(name):
         V = tf.get_variable(name = "V", shape = kernel_size + (output_shape[-1], xshape[-1]), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
-        M = get_block_triangular_mask(output_shape[-1], block_heights, dtype=tf.float32, triangular_type = "lower")[tf.newaxis, tf.newaxis, :, :]
+        M = get_block_triangular_mask(block_widths, block_heights, dtype=tf.float32, triangular_type = "lower")[tf.newaxis, tf.newaxis, :, :]
         g = tf.get_variable(name = "g", shape = output_shape[-1], initializer=tf.constant_initializer(1.), dtype=tf.float32)
         b = tf.get_variable(name = "b", shape = output_shape[-1], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 

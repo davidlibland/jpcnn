@@ -33,6 +33,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
     channels = test_input.shape[-1]
     num_frequencies = np.array(compression).size
     chan_per_freq = channels//num_frequencies
+    assert channels == chan_per_freq * num_frequencies
     predictions = np.zeros_like(test_input)
     cap_adjustments = []
     if one_hot_sample_labels is not None:
@@ -46,10 +47,11 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
                 block_end = (k+1)*chan_per_freq*mixtures_per_channel*3
 
                 with container.as_default():
-                    full_pred = model(predictions)
-                    ijk_likelihood = full_pred[:, j, i, block_start: block_end]
-                ijk_sample = sample_from_discretized_mix_logistic(ijk_likelihood, [mixtures_per_channel] * chan_per_freq)
+                    full_logits = model(predictions)
+                    ijk_logits = full_logits[:, j, i, block_start: block_end]
+                ijk_sample = sample_from_discretized_mix_logistic(ijk_logits, [mixtures_per_channel] * chan_per_freq)
                 predictions[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq] = ijk_sample
+                assert predictions.shape[-1]*mixtures_per_channel*3 == full_logits.shape[-1]
 
                 # crop values to [0,1] interval:
             reconstruction = flat_reconstruct(predictions, compression)
