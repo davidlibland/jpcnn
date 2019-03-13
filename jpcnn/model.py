@@ -202,15 +202,13 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
         assert len(ul_list) == 0, "All ul layers should be connected."
         assert len(dl_list) == 0, "All dl layers should be connected."
         # Each mixture should have 3 params,
+        final_block_heights = block_heights
+        final_block_heights[0] += num_filters  # add ul above the blocks.
         final_block_widths = [0] + [ 3 * mixtures_per_channel for _ in block_sizes]
         logits = nn.masked_nin_layer(
-            dl,
+            tf.concat([ul, dl], axis=3),
             block_heights = block_heights,
             block_widths = final_block_widths,
-        )
-        logits += nn.nin_layer(
-            ul,
-            num_units=sum(final_block_widths)
         )
         nn.assert_finite(logits)
         return logits

@@ -51,14 +51,13 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
                     ijk_logits = full_logits[:, j, i, block_start: block_end]
                 ijk_sample = sample_from_discretized_mix_logistic(ijk_logits, [mixtures_per_channel] * chan_per_freq)
                 predictions[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq] = ijk_sample
-                assert predictions.shape[-1]*mixtures_per_channel*3 == full_logits.shape[-1]
 
                 # crop values to [0,1] interval:
-            reconstruction = flat_reconstruct(predictions, compression)
-            capped_sample = tf.maximum(tf.minimum(reconstruction, 1), 0)
-            recompression = flat_compress(capped_sample, compression)
-            cap_adjustments.append(float(tf.reduce_max(tf.abs(predictions[:,j,i,:] - recompression[:,j,i,:]))))
-            predictions[:,j,i,:] = recompression[:,j,i,:]
+                reconstruction = flat_reconstruct(predictions, compression)
+                capped_sample = tf.maximum(tf.minimum(reconstruction, 1), 0)
+                recompression = flat_compress(capped_sample, compression)
+                cap_adjustments.append(float(tf.reduce_max(tf.abs(predictions[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq] - recompression[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq]))))
+                predictions[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq] = recompression[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq]
 
     print("Cap adjustment: %s" % max(cap_adjustments))
     decompressed_images = flat_reconstruct(predictions, compression)[:, :, :, 0]
