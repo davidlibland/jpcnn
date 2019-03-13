@@ -43,21 +43,26 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
     for j in range(height):
         for i in range(width):
             for k in range(num_frequencies):
-                block_start = k*chan_per_freq*mixtures_per_channel*3
-                block_end = (k+1)*chan_per_freq*mixtures_per_channel*3
+                chan_end = (k + 1) * chan_per_freq
+                block_end = chan_end * mixtures_per_channel * 3
 
                 with container.as_default():
                     full_logits = model(predictions)
-                    ijk_logits = full_logits[:, j, i, block_start: block_end]
-                ijk_sample = sample_from_discretized_mix_logistic(ijk_logits, [mixtures_per_channel] * chan_per_freq)
-                predictions[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq] = ijk_sample
+                    ijk_logits = full_logits[:, j, i, :block_end]
+                ijk_sample = sample_from_discretized_mix_logistic(
+                    ijk_logits, [mixtures_per_channel] * chan_end)
+                predictions[:,j,i, :chan_end] = ijk_sample
 
                 # crop values to [0,1] interval:
                 reconstruction = flat_reconstruct(predictions, compression)
                 capped_sample = tf.maximum(tf.minimum(reconstruction, 1), 0)
                 recompression = flat_compress(capped_sample, compression)
-                cap_adjustments.append(float(tf.reduce_max(tf.abs(predictions[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq] - recompression[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq]))))
-                predictions[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq] = recompression[:,j,i,k*chan_per_freq: (k+1)*chan_per_freq]
+                chan_start = k * chan_per_freq
+                cap_adjustments.append(float(tf.reduce_max(
+                    tf.abs(predictions[:,j,i,chan_start: chan_end]
+                    - recompression[:, j, i, chan_start: chan_end])
+                )))
+                predictions[:,j,i, : chan_end] = recompression[:, j, i, : chan_end]
 
     print("Cap adjustment: %s" % max(cap_adjustments))
     decompressed_images = flat_reconstruct(predictions, compression)[:, :, :, 0]
