@@ -263,10 +263,7 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         dropbox_access_token = sys.argv[1]
         print("Access Token: %s" % dropbox_access_token)
-    train(train_dataset, val_dataset, JPCNNConfig(
-        image_dim=image_dim,
-        compression = compression,
-        seed = seed,
-        num_test_elements = num_test_elements
-    ), access_token = dropbox_access_token)
-    # train(train_dataset, JPCNNConfig(image_dim=image_dim), ckpt_file = "Checkpoint-20181011-004410/params_tmp.ckpt-15")
+    conf = JPCNNConfig(image_dim=image_dim, compression=compression,
+                               seed=seed, num_test_elements=num_test_elements)
+    train(train_dataset, val_dataset, conf, access_token = dropbox_access_token)
+    # train(train_dataset, val_dataset, conf, ckpt_file = "Checkpoint-20190313-000821/params_mnist.ckpt-42", access_token = dropbox_access_token)

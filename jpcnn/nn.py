@@ -488,10 +488,10 @@ def discretized_mix_logistic_loss(x, l, mixture_sizes):
     lshape = get_shape_as_list(l)
     assert xshape[:-1] == lshape[:-1], \
         "Target shape must be compatible with shape of distribution params."
-    num_logistics = xshape[-1] // 3  # 2 params for each logistic + 1 mix param
-    logit_probs = x[...,:num_logistics]
-    means = x[..., num_logistics: 2*num_logistics]
-    logexpm1_scales = x[..., 2*num_logistics:]
+    # 2 params for each logistic + 1 mix param:
+    logit_probs = x[...,0::3]
+    means = x[..., 1::3]
+    logexpm1_scales = x[..., 2::3]
     target_indices = [i for j, l in enumerate(mixture_sizes) for i in [j]*l]
     component_targets = tf.gather(l, target_indices, axis=-1)
     centered_targets = component_targets - means
@@ -536,17 +536,15 @@ def sample_from_discretized_mix_logistic(x, mixture_sizes):
     mixtures in the corresponding output.
     # ToDo: add discretization w/ control of granularity
     """
-    xshape = get_shape_as_list(x)
-    num_logistics = xshape[-1] // 3  # 2 params for each logistic + 1 mixture
-
+    # 2 params for each logistic + 1 mixture
     # First we sample the softmax indicators:
-    softmax_indices = sample_multinomials(x[...,:num_logistics], mixture_sizes)
+    softmax_indices = sample_multinomials(x[...,0::3], mixture_sizes)
     logistic_means = tf.batch_gather(
-        params = x[..., num_logistics: 2*num_logistics],
+        params = x[..., 1::3],
         indices = softmax_indices,
     )
     logistic_scales = tf.exp(tf.batch_gather(
-        params = x[..., 2*num_logistics:],
+        params = x[..., 2::3],
         indices = softmax_indices,
     ))
     u = tf.random_uniform(logistic_means.get_shape(),
