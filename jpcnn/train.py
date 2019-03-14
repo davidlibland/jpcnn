@@ -173,7 +173,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                                    avg_num_filters=conf.avg_num_filters,
                                    num_resnet=conf.num_resnet,
                                    compression=conf.compression,
-                                   mixtures_per_channel = conf.mixtures_per_channel),
+                                   mixtures_per_channel = conf.mixtures_per_channel,
+                                   training=False),
                 int(global_step),
                 noise,
                 container,
@@ -236,7 +237,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                            num_resnet=conf.num_resnet,
                            compression=conf.compression,
                            mixtures_per_channel =
-                           conf.mixtures_per_channel),
+                           conf.mixtures_per_channel,
+                           training=False),
         conf.epochs,
         noise, 
         container,
@@ -246,6 +248,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         display_images = conf.display_images,
         one_hot_sample_labels=sample_labels
     )
+
+
 def image_processors(compression):
     def compressor(im):
         return flat_compress(im, compression)
