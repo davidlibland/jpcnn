@@ -55,7 +55,7 @@ def shift_layer(x, x_shift=0, y_shift=0, counters=None, init=False, **kwargs):
 
 
 @add_arg_scope
-def masked_conv_layer(x, block_heights, block_widths, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., include_diagonals=True, **kwargs):
+def masked_conv_layer(x, block_heights, block_widths, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., include_diagonals=True, mask_type="matrix", **kwargs):
     name = get_name('masked_conv', counters)
     kernel_size=tuple(kernel_size)
     strides=tuple(strides)
@@ -64,7 +64,12 @@ def masked_conv_layer(x, block_heights, block_widths, kernel_size, strides, pad=
         output_size = sum(block_widths)
         assert xshape[-1] == sum(block_heights), "mask must be compatibe with input."
         V = tf.get_variable(name = "V", shape = kernel_size + (xshape[-1], output_size), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
-        M = get_block_triangular_mask(block_heights, block_widths, include_diagonals=include_diagonals, dtype=tf.float32)[tf.newaxis, tf.newaxis, :, :]
+        if mask_type == "matrix":
+            M = get_block_triangular_mask(block_heights, block_widths, include_diagonals=include_diagonals, dtype=tf.float32)[tf.newaxis, tf.newaxis, :, :]
+        elif mask_type == "tensor":
+            M = get_block_triangular_tensor_mask(kernel_size, block_heights, block_widths, include_diagonals=include_diagonals, dtype=tf.float32)
+        else:
+            raise ValueError("Unrecognized mask type: %s" % mask_type)
         g = tf.get_variable(name = "g", shape = [output_size], initializer=tf.constant_initializer(1.), dtype=tf.float32)
         b = tf.get_variable(name = "b", shape = [output_size], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 
@@ -100,17 +105,22 @@ def masked_conv_layer(x, block_heights, block_widths, kernel_size, strides, pad=
 
 
 @add_arg_scope
-def masked_deconv_layer(x, block_heights, block_widths, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., **kwargs):
+def masked_deconv_layer(x, block_heights, block_widths, kernel_size, strides, pad="SAME", nonlinearity=None, counters=None, init=False, init_scale=1., mask_type="matrix", **kwargs):
     name = get_name('masked_deconv', counters)
     xshape = get_shape_as_list(x)
-    assert xshape[-1] == sum(block_heights), "mask must be compatibe with input."
+    assert xshape[-1] == sum(block_heights), "mask must be compatible with input."
     if pad=='SAME':
         output_shape = [xshape[0], xshape[1]*strides[0], xshape[2]*strides[1], sum(block_widths)]
     else:
         output_shape = [xshape[0], xshape[1]*strides[0] + kernel_size[0]-1, xshape[2]*strides[1] + kernel_size[1]-1, sum(block_widths)]
     with tf.variable_scope(name):
         V = tf.get_variable(name = "V", shape = kernel_size + (output_shape[-1], xshape[-1]), initializer=tf.random_normal_initializer(0, 0.05), dtype=tf.float32)
-        M = get_block_triangular_mask(block_widths, block_heights, dtype=tf.float32, triangular_type = "lower")[tf.newaxis, tf.newaxis, :, :]
+        if mask_type == "matrix":
+            M = get_block_triangular_mask(block_heights, block_widths, dtype=tf.float32)[tf.newaxis, tf.newaxis, :, :]
+        elif mask_type == "tensor":
+            M = get_block_triangular_tensor_mask(kernel_size, block_heights, block_widths, dtype=tf.float32)
+        else:
+            raise ValueError("Unrecognized mask type: %s" % mask_type)
         g = tf.get_variable(name = "g", shape = output_shape[-1], initializer=tf.constant_initializer(1.), dtype=tf.float32)
         b = tf.get_variable(name = "b", shape = output_shape[-1], initializer=tf.constant_initializer(0.), dtype=tf.float32)
 
@@ -288,7 +298,7 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
 
 
 @add_arg_scope
-def masked_gated_resnet(x, a=None, masked_a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, block_sizes=None, **kwargs):
+def masked_gated_resnet(x, a=None, masked_a_list=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, block_sizes=None, **kwargs):
     x_shape = get_shape_as_list(x)
     if block_sizes is None:
         # Assume there is a single block.
@@ -297,8 +307,9 @@ def masked_gated_resnet(x, a=None, masked_a=None, nonlinearity=tf.nn.leaky_relu,
     y1 = conv(nonlinearity(x), block_heights=block_sizes, block_widths=block_sizes)
     if a is not None:  # Add short cut connections:
         y1 += nin_layer(nonlinearity(a), sum(block_sizes))
-    if masked_a is not None:  # Add masked short cut connections:
-        y1 += masked_nin_layer(nonlinearity(masked_a), block_heights=block_sizes, block_widths=block_sizes)
+    if masked_a_list is not None:  # Add masked short cut connections:
+        for m_a in masked_a_list:
+            y1 += masked_nin_layer(nonlinearity(m_a), block_heights=block_sizes, block_widths=block_sizes)
     y1 = nonlinearity(y1)
     if dropout_p > 0:
         y1 = tf.nn.dropout(y1, keep_prob=1. - dropout_p)
@@ -351,7 +362,7 @@ def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, drop
 
 
 @add_arg_scope
-def masked_shift_conv_2D(x, block_heights, block_widths, kernel_size, strides=(1, 1), shift_types=None, counters=None, include_diagonals=True, **kwargs):
+def masked_shift_conv_2D(x, block_heights, block_widths, kernel_size, strides=(1, 1), shift_types=None, counters=None, include_diagonals=True, mask_type="matrix", **kwargs):
     if shift_types is None:
         shift_types = []
     if "down" in shift_types:
@@ -368,7 +379,7 @@ def masked_shift_conv_2D(x, block_heights, block_widths, kernel_size, strides=(1
         pad_x = (int((kernel_size[1]-1)/2), int((kernel_size[1]-1)/2))
 
     pad_x = pad2d_layer(x, paddings=[pad_y, pad_x], mode="CONSTANT")
-    conv_x = masked_conv_layer(pad_x, block_heights, block_widths, kernel_size, strides, pad= "VALID", include_diagonals=include_diagonals, **kwargs)
+    conv_x = masked_conv_layer(pad_x, block_heights, block_widths, kernel_size, strides, pad= "VALID", include_diagonals=include_diagonals, mask_type=mask_type, **kwargs)
 
     return conv_x
 
@@ -615,6 +626,43 @@ def get_block_triangular_mask(block_heights, block_widths, include_diagonals=Tru
         [[ones(i,j) if i<j else zeros(i,j) for j in range(num_blocks)]
          for i in range(num_blocks)]),
         dtype=dtype)
+
+
+def get_block_triangular_tensor_mask(kernel_size, block_heights, block_widths, include_diagonals=True, triangular_type="upper", dtype=tf.float32):
+    """Assumes that shape is 2-dim"""
+    assert len(block_heights) == len(block_widths), "An equal number of heights and widths must be given."
+    if triangular_type.lower() == "lower":
+        return tf.transpose(get_block_triangular_tensor_mask(kernel_size, block_widths, block_heights, include_diagonals=include_diagonals, triangular_type="upper", dtype=dtype))
+    num_blocks = len(block_heights)
+    shape = lambda i, j: [1,1,block_heights[i], block_widths[j]]
+    ones = lambda i, j: np.ones(shape(i, j))
+    zeros = lambda i, j: np.zeros(shape(i, j))
+    if include_diagonals:
+        def valid_cond(h,w,i,j):
+            if i < j:
+                return True
+            if i == j and h < kernel_size[1] // 2:
+                return True
+            if i == j and h == kernel_size[1] // 2 and w <= kernel_size[0] //2:
+                return True
+            return False
+    else:
+        def valid_cond(h,w,i,j):
+            if i < j:
+                return True
+            if i == j and h < kernel_size[1] // 2:
+                return True
+            if i == j and h == kernel_size[1] // 2 and w < kernel_size[0] //2:
+                return True
+            return False
+    return tf.constant(np.block(
+        [[[[
+            ones(i,j) if valid_cond(h,w,i,j) else zeros(i,j)
+            for j in range(num_blocks)]
+            for i in range(num_blocks)]
+            for w in range(kernel_size[1])]
+            for h in range(kernel_size[0])]
+    ), dtype=dtype)
 
 def assert_finite(x):
     pass
