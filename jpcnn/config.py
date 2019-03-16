@@ -11,7 +11,7 @@ class JPCNNConfig:
     mixtures_per_channel: int=2
     lr: float=1e-3
     epochs: int=500
-    description: str="mnist"
+    description: str="mnist-freq-last"
     ckpt_interval: int=1
     dropbox_root: str="checkpoints"
     dropbox_sync: bool=True
