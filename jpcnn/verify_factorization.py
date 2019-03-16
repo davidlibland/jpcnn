@@ -20,7 +20,7 @@ counters = {}
 mixtures_per_channel = 1
 with tf.GradientTape(persistent=True) as g:
     g.watch(x)
-    y = tf.reduce_sum(model(x, labels=None, avg_num_filters=2, num_layers=1, num_resnet=2,
+    y = tf.reduce_sum(model(x, labels=None, avg_num_filters=2, num_layers=1, num_resnet=4,
               compression=compression, mixtures_per_channel=mixtures_per_channel), axis=0)
     y_s = [(y[i, j, k], i, j, k)
            for i in range(comp_im_dim)
@@ -29,18 +29,7 @@ with tf.GradientTape(persistent=True) as g:
 dy_dx = g.gradient(y, x) # Will compute to 6.0
 dys_dx = [(tf.reduce_sum(g.gradient(yijk, x)**2, axis=0), i, j, k) for yijk, i, j, k in y_s]
 
-for y_ijk, i, j, k in dys_dx:
-    for l, m, n in product(range(comp_im_dim), range(comp_im_dim), range(channels)):
-        nn = 3*mixtures_per_channel*n
-        if nn > k or (nn == k and l > i) or (nn == k and l == i and m >= j):
-            assert np.isclose(y_ijk[l, m, n], 0), \
-                "The gradient of the output at (%d, %d, %d) with respect to " \
-                "the input at (%d, %d, %d) should be zero" % (i, j, k, l, m, n)
-        else:
-            pass
-            # assert not np.isclose(y_ijk[l, m, n], 0), \
-            #     "The gradient of the output at (%d, %d, %d) with respect to " \
-            #     "the input at (%d, %d, %d) should be non zero" % (i, j, k, l, m, n)
+# Pictures:
 
 masks = [((np.isclose(dy, 0) == False).astype(np.int), i,j,k) for dy, i, j, k in dys_dx]
 for dy, i, j, k in masks:
@@ -60,3 +49,17 @@ for (i, j), ll in diag_masks.items():
     else:
         lll += np.array(ll)
 print(lll.T)
+
+# verification:
+
+for y_ijk, i, j, k in dys_dx:
+    for l, m, n in product(range(comp_im_dim), range(comp_im_dim), range(channels)):
+        kk = k // 3*mixtures_per_channel
+        if n > kk or (n == kk and l > i) or (n == kk and l == i and m >= j):
+            assert np.isclose(y_ijk[l, m, n], 0), \
+                "The gradient of the output at (%d, %d, %d) with respect to " \
+                "the input at (%d, %d, %d) should be zero" % (i, j, k, l, m, n)
+        else:
+            assert not np.isclose(y_ijk[l, m, n], 0), \
+                "The gradient of the output at (%d, %d, %d) with respect to " \
+                "the input at (%d, %d, %d) should be non zero" % (i, j, k, l, m, n)

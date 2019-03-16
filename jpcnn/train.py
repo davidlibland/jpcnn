@@ -40,9 +40,9 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
         sample_labels = np.argmax(one_hot_sample_labels, axis = 1)
     else:
         sample_labels = None
-    for j in range(height):
-        for i in range(width):
-            for k in range(num_frequencies):
+    for k in range(num_frequencies):
+        for j in range(height):
+            for i in range(width):
                 chan_end = (k + 1) * chan_per_freq
                 block_end = chan_end * mixtures_per_channel * 3
 
