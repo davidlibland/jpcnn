@@ -100,8 +100,12 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                   mixtures_per_channel = conf.mixtures_per_channel,
                   init = True, compression = conf.compression)
         # pull sample labels:
-        if i == 0 and labels is not None:
-            sample_labels = labels[:16]
+        if i == 0 :
+            if labels is not None:
+                sample_labels = labels[:16]
+            if ckpt_file is not None:
+                #  skip the initialization
+                break
 
     global_step = tf.train.get_or_create_global_step()
     saver = tf.train.Saver(
