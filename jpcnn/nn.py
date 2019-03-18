@@ -504,6 +504,16 @@ def down_right_shifted_conv2d(x, num_filters, kernel_size=(2, 2), strides=(1, 1)
         )
 
 
+def mix_logistic_mean_l2cap_loss(x, mean_caps, weights):
+    broadcast_caps = mean_caps[tf.newaxis, ...]
+    broadcast_weights = weights[tf.newaxis, ...]
+    means = x[..., 1::3]
+    abs_means = tf.abs(means)
+    clipped_means = tf.maximum(abs_means, broadcast_caps)
+    shifted_means = clipped_means - broadcast_caps  # >= 0
+    return tf.reduce_sum(tf.reduce_mean(shifted_means**2 * broadcast_weights, axis=0))
+
+
 def discretized_mix_logistic_loss(x, l, mixture_sizes):
     # ToDo: add discretization w/ control of granularity
     xshape = get_shape_as_list(x)

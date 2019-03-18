@@ -3,7 +3,7 @@ from typing import List
 import tensorflow as tf
 import numpy as np
 
-from jpcnn.nn import get_shape_as_list
+from jpcnn.nn import get_shape_as_list, mix_logistic_mean_l2cap_loss
 
 
 def partition_axis(x, n: int, axis: int):
@@ -179,6 +179,24 @@ def get_block_sizes(avg_num_filters, compression):
     block_sizes = [int(np.round(normalizer * avg_num_filters / cmp))
                    for cmp in flat_compression]
     return block_sizes
+
+
+def get_component_compressions(compression, num_multinomials):
+    flat_compression = diagonal_flatten(np.array(compression))
+    comp_comps = []
+    for n, comp in zip(num_multinomials, flat_compression):
+        for _ in range(n):
+            comp_comps.append(comp)
+    assert len(comp_comps) == sum(num_multinomials)
+    return tf.constant(np.array(comp_comps).astype(np.float32))
+
+
+def capped_mean_loss(x, compression, num_multinomials, weight=0.01):
+    comp_compressions = get_component_compressions(compression, num_multinomials)
+    inv_comps = 1/comp_compressions
+    caps = 4*inv_comps
+    weights = weight*comp_compressions
+    return mix_logistic_mean_l2cap_loss(x, caps, weights)
 
 
 def diagonal_flatten(x):

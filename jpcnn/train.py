@@ -10,6 +10,7 @@ from jpcnn.data import get_dataset, BATCH_SIZE
 from jpcnn.dct_utils import (
     flat_compress, flat_reconstruct, basic_compression,
     mean_inv_compression,
+    capped_mean_loss,
 )
 from jpcnn.file_utils import (
     build_checkpoint_file_name,
@@ -108,6 +109,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     )
     if ckpt_file is not None:
         saver.restore(None, ckpt_file)
+    prev_loss = 1.
     while global_step < conf.epochs:
         global_step.assign_add(1)
         print("Starting Epoch: {0:d}".format(int(global_step)))
@@ -119,7 +121,6 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             else:
                 images = data
                 labels = None
-
             with tf.GradientTape() as gr_tape, container.as_default():
                 image_var = tf.contrib.eager.Variable(images)
                 im_shape = list(map(int, tf.shape(image_var)))
@@ -135,15 +136,25 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 loss = tf.reduce_mean(discretized_mix_logistic_loss(
                     logits, images, [conf.mixtures_per_channel] * im_shape[-1])
                 )
+                # Prior for means to be near zero,
+                # downweighted as the loss decreases
+                capped_loss = capped_mean_loss(
+                    logits, conf.compression,
+                    [conf.mixtures_per_channel] * im_shape[-1],
+                    0.001*tf.sqrt(prev_loss)
+                )
                 rescaled_loss = mean_inv_compression(conf.compression) * loss
                 assert_finite(loss)
+                training_loss = loss+capped_loss
+            prev_loss = rescaled_loss
             with tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar("loss", loss)
                 tf.contrib.summary.scalar("rescaled_loss", rescaled_loss)
+                tf.contrib.summary.scalar("capped_loss", capped_loss)
             total_train_loss.append(np.array(rescaled_loss))
-            print(float(rescaled_loss))
+            print(float(rescaled_loss), float(capped_loss))
             gradients = gr_tape.gradient(
-                loss,
+                training_loss,
                 container.trainable_variables()
             )
 
@@ -275,4 +286,4 @@ if __name__ == "__main__":
     conf = JPCNNConfig(image_dim=image_dim, compression=compression,
                                seed=seed, num_test_elements=num_test_elements)
     train(train_dataset, val_dataset, conf, access_token = dropbox_access_token)
-    # train(train_dataset, val_dataset, conf, ckpt_file = "Checkpoint-20190313-000821/params_mnist.ckpt-42", access_token = dropbox_access_token)
+    # train(train_dataset, val_dataset, conf, ckpt_file = "Checkpoint-20190315-164022/params_mnist.ckpt-1", access_token = dropbox_access_token)
