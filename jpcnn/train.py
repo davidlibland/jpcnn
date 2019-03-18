@@ -73,7 +73,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
                             sample_labels=sample_labels)
 
 
-def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, access_token=None):
+def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, access_token=None, num_steps=None):
     rng = np.random.RandomState(conf.seed)
     noise = rng.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
     noise = image_processors(conf.compression)[0](noise)
@@ -87,7 +87,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
 
     # Data dependent initialization:
     for i, data in enumerate(train_dataset):
-        print("init on minibatch %s of %s" % (i+1, buffer_size//BATCH_SIZE))
+        print("init on minibatch %s of %s" % (i+1, num_steps))
         if isinstance(data, tuple):
             images, labels = data
         else:
@@ -159,7 +159,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 tf.contrib.summary.scalar("capped_loss", capped_loss)
             total_train_loss.append(np.array(rescaled_loss))
             print("loss %s on minibatch %s of %s; cap loss of %s"
-                  % (float(rescaled_loss), i + 1, buffer_size//BATCH_SIZE,
+                  % (float(rescaled_loss), i + 1, num_steps,
                      float(capped_loss)))
             gradients = gr_tape.gradient(
                 training_loss,
@@ -293,5 +293,5 @@ if __name__ == "__main__":
         print("Access Token: %s" % dropbox_access_token)
     conf = JPCNNConfig(image_dim=image_dim, compression=compression,
                                seed=seed, num_test_elements=num_test_elements)
-    train(train_dataset, val_dataset, conf, access_token = dropbox_access_token)
-    # train(train_dataset, val_dataset, conf, ckpt_file = "Checkpoint-20190315-164022/params_mnist.ckpt-1", access_token = dropbox_access_token)
+    train(train_dataset, val_dataset, conf, access_token = dropbox_access_token, num_steps=buffer_size//BATCH_SIZE)
+    # train(train_dataset, val_dataset, conf, ckpt_file = "Checkpoint-20190318-133157/params_mnist-freq-last.ckpt-2", access_token = dropbox_access_token, num_steps=buffer_size//BATCH_SIZE)
