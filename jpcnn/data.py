@@ -49,19 +49,17 @@ def get_dataset(batch_size = BATCH_SIZE, image_processors=None, basic_test_data 
     else:
         (all_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
         all_images = all_images.reshape(all_images.shape[0], 28, 28,
-                                            1).astype(dtype)  # [train_labels==0,:,:,:]
-        # We are normalizing the images to the range of [0, 1]
-        # train_images = np.round(train_images / 256).astype(dtype)
+                                            1).astype(dtype)
         all_images = all_images.astype(dtype)
     buffer_size = all_images.shape[0]
     assert all_images.shape[1] == all_images.shape[2], "Images should be square"
     image_dim = all_images.shape[1]
-    # Normalize images to the range of [0, 1]
+    # Normalize images to the range of [-1, 1]
     image_max = tf.reduce_max(all_images)
     image_min = tf.reduce_min(all_images)
     assert image_max > image_min, "Must have nontrivial images"
-    if image_max > 1 or image_min < 0:
-        all_images = (all_images - image_min)/(image_max - image_min)
+    if image_max > 1 or image_min < -1:
+        all_images = 2*(all_images - image_min)/(image_max - image_min) - 1
     print("Buffer size: %d" % buffer_size)
     print("Mini Batch size: %d" % batch_size)
     print("Image size: %d" % image_dim)

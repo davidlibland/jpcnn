@@ -55,7 +55,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
 
                 # crop values to [0,1] interval:
                 reconstruction = flat_reconstruct(predictions, compression)
-                capped_sample = tf.maximum(tf.minimum(reconstruction, 1), 0)
+                capped_sample = tf.maximum(tf.minimum(reconstruction, 1), -1)
                 recompression = flat_compress(capped_sample, compression)
                 chan_start = k * chan_per_freq
                 cap_adjustments.append(float(tf.reduce_max(

@@ -565,8 +565,8 @@ def sample_from_discretized_mix_logistic(x, mixture_sizes):
         params = x[..., 1::3],
         indices = softmax_indices,
     )
-    logistic_scales = tf.exp(tf.batch_gather(
-        params = x[..., 2::3],
+    logistic_scales = 1/tf.nn.softplus(tf.batch_gather(
+        params = -x[..., 2::3],
         indices = softmax_indices,
     ))
     u = tf.random_uniform(logistic_means.get_shape(),
