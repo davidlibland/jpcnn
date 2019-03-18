@@ -54,7 +54,7 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
                     ijk_logits, [mixtures_per_channel] * chan_end)
                 predictions[:,j,i, :chan_end] = ijk_sample
 
-                # crop values to [0,1] interval:
+                # crop values to [-1,1] interval:
                 reconstruction = flat_reconstruct(predictions, compression)
                 capped_sample = tf.maximum(tf.minimum(reconstruction, 1), -1)
                 recompression = flat_compress(capped_sample, compression)
@@ -67,8 +67,9 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
 
     print("Cap adjustment: %s" % max(cap_adjustments))
     decompressed_images = flat_reconstruct(predictions, compression)[:, :, :, 0]
+    normalized_images = (decompressed_images + 1)/2  # normalize to [0,1]
     save_and_display_images(root_dir, 'image_at_epoch_{:04d}.png'.format(epoch),
-                            decompressed_images, display = display_images,
+                            normalized_images, display = display_images,
                             sample_labels=sample_labels)
 
 
@@ -86,6 +87,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
 
     # Data dependent initialization:
     for i, data in enumerate(train_dataset):
+        print("init on minibatch %s of %s" % (i+1, buffer_size//BATCH_SIZE))
         if isinstance(data, tuple):
             images, labels = data
         else:
