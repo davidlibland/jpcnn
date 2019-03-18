@@ -86,14 +86,15 @@ def masked_conv_layer(x, block_heights, block_widths, kernel_size, strides, pad=
         assert_finite(x)
         if init:  # normalize x
             m_init, v_init = tf.nn.moments(x, [0,1,2])
-            scale_init = init_scale / tf.sqrt(v_init + 1e-10)
-            if not include_diagonals:
-                d_scale_init = tf.concat([tf.ones(block_widths[0]), scale_init[block_widths[0]:]], axis=0)
-            else:
-                d_scale_init = scale_init
-            with tf.control_dependencies([g.assign(g * d_scale_init), b.assign_add(-m_init * d_scale_init)]):
+            safe_v_init = tf.where(
+                tf.equal(0, v_init),  # masked entries will always be zero.
+                tf.ones_like(v_init),
+                v_init
+            )
+            scale_init = init_scale / tf.sqrt(safe_v_init + 1e-10)
+            with tf.control_dependencies([g.assign(g * scale_init), b.assign_add(-m_init * scale_init)]):
                 x = tf.identity(x)
-                assert_finite(d_scale_init)
+                assert_finite(scale_init)
                 assert_finite(g)
 
 
@@ -133,7 +134,12 @@ def masked_deconv_layer(x, block_heights, block_widths, kernel_size, strides, pa
 
         if init:  # normalize x
             m_init, v_init = tf.nn.moments(x, [0,1,2])
-            scale_init = init_scale / tf.sqrt(v_init + 1e-10)
+            safe_v_init = tf.where(
+                tf.equal(0, v_init),  # masked entries will always be zero.
+                tf.ones_like(v_init),
+                v_init
+            )
+            scale_init = init_scale / tf.sqrt(safe_v_init + 1e-10)
             with tf.control_dependencies([g.assign(g * scale_init), b.assign_add(-m_init * scale_init)]):
                 x = tf.identity(x)
 
@@ -227,9 +233,14 @@ def masked_dense_layer(x, block_heights, block_widths, nonlinearity=None, counte
         x = tf.reshape(scaler, [1, output_size]) * x + tf.reshape(b, [1, output_size])
         assert_finite(x)
 
-        if init: # normalize x
+        if init:  # normalize x
             m_init, v_init = tf.nn.moments(x, [0])
-            scale_init = init_scale/tf.sqrt(v_init + 1e-10)
+            safe_v_init = tf.where(
+                tf.equal(0, v_init),  # masked entries will always be zero.
+                tf.ones_like(v_init),
+                v_init
+            )
+            scale_init = init_scale/tf.sqrt(safe_v_init + 1e-10)
             with tf.control_dependencies([g.assign(g*scale_init), b.assign_add(-m_init*scale_init)]):
                 x = tf.identity(x)
 
@@ -665,5 +676,5 @@ def get_block_triangular_tensor_mask(kernel_size, block_heights, block_widths, i
     ), dtype=dtype)
 
 def assert_finite(x):
-    pass
-    # assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
+    # pass
+    assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
