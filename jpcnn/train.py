@@ -121,7 +121,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         print("Starting Epoch: {0:d}".format(int(global_step)))
         start = time.time()
         total_train_loss = []
-        for data in train_dataset:
+        for i, data in enumerate(train_dataset):
             if isinstance(data, tuple):
                 images, labels = data
             else:
@@ -158,7 +158,9 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 tf.contrib.summary.scalar("rescaled_loss", rescaled_loss)
                 tf.contrib.summary.scalar("capped_loss", capped_loss)
             total_train_loss.append(np.array(rescaled_loss))
-            print(float(rescaled_loss), float(capped_loss))
+            print("loss %s on minibatch %s of %s; cap loss of %s"
+                  % (float(rescaled_loss), i + 1, buffer_size//BATCH_SIZE,
+                     float(capped_loss)))
             gradients = gr_tape.gradient(
                 training_loss,
                 container.trainable_variables()
