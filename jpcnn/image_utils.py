@@ -1,11 +1,11 @@
-from typing import Iterable
+from typing import List
 import os
 
 import numpy as np
 from matplotlib import pyplot as plt
 
 
-def save_and_display_images(root_dir, file_name, image_data, display=True, sample_labels: Iterable[int]=None):
+def save_and_display_images(root_dir, file_name, image_data, display=True, sample_labels: List[int]=None):
     """image_data is of shape [N, W, H], where N is a (square) batch size."""
     dims = int(np.sqrt(int(image_data.shape[0])))
     assert dims * dims == int(image_data.shape[0]), \
