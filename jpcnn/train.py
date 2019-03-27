@@ -91,25 +91,24 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     summary_writer = tf.contrib.summary.create_file_writer("{}/logs".format(dir_name), flush_millis = 10000)
     summary_writer.set_as_default()
 
-    # Data dependent initialization:
-    for i, data in enumerate(train_dataset):
-        print("init on minibatch %s of %s" % (i+1, num_steps))
+    # Data dependent initialization (on a single minibatch)
+    for i, data in enumerate(train_dataset.take(1)):
+        print("init on minibatch")
         if isinstance(data, tuple):
-            images, labels = data
+            c_images, labels = data
         else:
-            images = data
+            c_images = data
             labels = None
         with container.as_default():
-            image_var = tf.contrib.eager.Variable(images)
-            model(image_var, labels, training = True, num_layers = conf.num_layers,
+            c_image_var = tf.contrib.eager.Variable(c_images)
+            model(c_image_var, labels, training = True, num_layers = conf.num_layers,
                   block_sizes = block_sizes, num_resnet = conf.num_resnet,
                   mixtures_per_channel = conf.mixtures_per_channel,
                   init = True)
         # pull sample labels:
-        if i == 0 :
-            if labels is not None:
-                sample_labels = labels[:16]
-            break
+        if labels is not None:
+            sample_labels = labels[:16]
+        break
 
     global_step = tf.train.get_or_create_global_step()
     saver = tf.train.Saver(
@@ -119,7 +118,6 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     )
     if ckpt_file is not None:
         saver.restore(None, ckpt_file)
-    prev_loss = 1.
     while global_step < conf.epochs:
         global_step.assign_add(1)
         print("Starting Epoch: {0:d}".format(int(global_step)))
@@ -127,15 +125,15 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         total_train_loss = []
         for i, data in enumerate(train_dataset):
             if isinstance(data, tuple):
-                images, labels = data
+                c_images, labels = data
             else:
-                images = data
+                c_images = data
                 labels = None
             with tf.GradientTape() as gr_tape, container.as_default():
-                image_var = tf.contrib.eager.Variable(images)
-                im_shape = list(map(int, tf.shape(image_var)))
+                c_image_var = tf.contrib.eager.Variable(c_images)
+                input_shape = list(map(int, tf.shape(c_image_var)))
 
-                logits = model(image_var, labels,
+                logits = model(c_image_var, labels,
                                training = True,
                                num_layers=conf.num_layers,
                                block_sizes=block_sizes,
@@ -143,40 +141,25 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                                mixtures_per_channel = conf.mixtures_per_channel)
 
                 loss = tf.reduce_mean(discretized_mix_logistic_loss(
-                    logits, images, [conf.mixtures_per_channel] * im_shape[-1])
+                    logits, c_images, [conf.mixtures_per_channel] * input_shape[-1])
                 )
-                # Prior for means to be near zero,
-                # downweighted as the loss decreases
-                # capped_loss = capped_mean_loss(
-                #     logits, conf.compression,
-                #     [conf.mixtures_per_channel] * im_shape[-1],
-                #     0.001*tf.sqrt(prev_loss)
-                # )
-                capped_loss = 0
                 rescaled_loss = mean_inv_compression(conf.compression) * loss
                 assert_finite(loss)
-                training_loss = loss+capped_loss
-            prev_loss = rescaled_loss
+                training_loss = loss
             with tf.contrib.summary.always_record_summaries():
                 tf.contrib.summary.scalar("loss", loss)
                 tf.contrib.summary.scalar("rescaled_loss", rescaled_loss)
-                tf.contrib.summary.scalar("capped_loss", capped_loss)
             total_train_loss.append(np.array(rescaled_loss))
-            print("loss %s on minibatch %s of %s; cap loss of %s"
-                  % (float(rescaled_loss), i + 1, num_steps,
-                     float(capped_loss)))
+            print("loss %s on minibatch %s of %s"
+                  % (float(rescaled_loss), i + 1, num_steps))
             gradients = gr_tape.gradient(
                 training_loss,
                 container.trainable_variables()
             )
-            # gradients = [tf.clip_by_norm(g, 1e3) for g in gradients]
             large_grads = []
             for grd, var in zip(gradients, container.trainable_variables()):
                 if tf.reduce_any(tf.abs(grd) > 1e4):
                     large_grads.append((tf.reduce_max(tf.abs(grd)), var.name))
-                    # print("large gradient!")
-                    # print(tf.reduce_max(tf.abs(grd)), var.name)
-                    # print(tf.argmax(tf.abs(grd)), var.name)
             if large_grads:
                 for val, name in large_grads:
                     print("large gradient: %s, %s" % (name, float(val)))
@@ -232,10 +215,10 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                     test_images = test_data
                     test_labels = None
                 with container.as_default():
-                    image_var = tf.contrib.eager.Variable(test_images)
-                    im_shape = list(map(int, tf.shape(image_var)))
+                    c_image_var = tf.contrib.eager.Variable(test_images)
+                    input_shape = list(map(int, tf.shape(c_image_var)))
 
-                    logits = model(image_var, test_labels, training = False,
+                    logits = model(c_image_var, test_labels, training = False,
                                              num_layers=conf.num_layers,
                                              block_sizes=block_sizes,
                                              num_resnet=conf.num_resnet,
@@ -244,7 +227,7 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
 
                     loss = tf.reduce_mean(discretized_mix_logistic_loss(
                         logits, test_images,
-                        [conf.mixtures_per_channel] * im_shape[-1])
+                        [conf.mixtures_per_channel] * input_shape[-1])
                     )
                     rescaled_loss = mean_inv_compression(conf.compression) * loss
                 with tf.contrib.summary.always_record_summaries():
