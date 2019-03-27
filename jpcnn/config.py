@@ -19,3 +19,4 @@ class JPCNNConfig:
     compression: List[List[float]]=field(default_factory=lambda: [[1]])
     seed: int=1
     num_test_elements: int=4
+    frequencies_to_clip: int=40

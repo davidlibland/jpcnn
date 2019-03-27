@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 from itertools import product
 
-from jpcnn.dct_utils import basic_compression, flat_compress
+from jpcnn.dct_utils import basic_compression, flat_compress, get_block_sizes
 
 tf.enable_eager_execution()
 from jpcnn.model import model
@@ -18,10 +18,13 @@ channels = input.shape[-1]
 x = tf.constant(input, dtype=tf.float32)
 counters = {}
 mixtures_per_channel = 1
+avg_num_filters = 2
+block_sizes = get_block_sizes(avg_num_filters, compression)
 with tf.GradientTape(persistent=True) as g:
     g.watch(x)
-    y = tf.reduce_sum(model(x, labels=None, avg_num_filters=2, num_layers=1, num_resnet=4,
-              compression=compression, mixtures_per_channel=mixtures_per_channel), axis=0)
+    y = tf.reduce_sum(model(x, labels=None, block_sizes=block_sizes,
+                            num_layers=1, num_resnet=2,
+                            mixtures_per_channel=mixtures_per_channel), axis=0)
     y_s = [(y[i, j, k], i, j, k)
            for i in range(comp_im_dim)
            for j in range(comp_im_dim)

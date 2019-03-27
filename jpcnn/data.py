@@ -48,6 +48,10 @@ def get_dataset(batch_size = BATCH_SIZE, image_processors=None, basic_test_data 
         all_images = all_images.astype(dtype)/40
     else:
         (all_images, train_labels), (_, _) = tf.keras.datasets.mnist.load_data()
+
+        # all_images = all_images[:1024, :, :]
+        # train_labels = train_labels[:1024]
+
         all_images = all_images.reshape(all_images.shape[0], 28, 28,
                                             1).astype(dtype)
         all_images = all_images.astype(dtype)

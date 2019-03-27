@@ -4,9 +4,9 @@ import jpcnn.nn as nn
 from jpcnn.dct_utils import get_block_sizes
 
 
-def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression=None, mixtures_per_channel=1, dropout_p=0.9, training=True, init=False):
+def model(inputs, labels, num_layers, num_resnet=1, block_sizes=None, mixtures_per_channel=1, dropout_p=0.9, training=True, init=False):
     # Set up params for masking:
-    assert compression is not None, "Compression needs to be passed to the model"
+    assert block_sizes is not None, "block_sizes needs to be passed to the model"
 
     counters = {}
     if not training:
@@ -39,27 +39,37 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
 
     with arg_scope(arg_scope_layers, counters=counters, init=init, labels=labels):
         # add channel of ones to distinguish image from padding later on
+        input_shape = list(map(int, tf.shape(inputs)))
         inputs = tf.pad(inputs, [[0,0],[0,0],[0,0],[1,0]], "CONSTANT", constant_values=1)
-        block_sizes = get_block_sizes(avg_num_filters, compression)
+        # height_pos = tf.linspace(1., 2., input_shape[1])
+        # height_pos = tf.random.normal(shape=[input_shape[1]])
+        # height_pos = tf.broadcast_to(tf.reshape(height_pos, [1, -1, 1, 1]), input_shape[:-1] + [1])
+        # width_pos = tf.linspace(1., 2., input_shape[2])
+        # width_pos = tf.random.normal(shape=[input_shape[2]])
+        # width_pos = tf.broadcast_to(tf.reshape(width_pos, [1, 1, -1, 1]), input_shape[:-1] + [1])
+        # inputs = tf.concat([height_pos, width_pos, inputs], axis=3)
         extended_block_sizes = [1] + block_sizes  # add extra block for the channel of ones.
         block_heights = extended_block_sizes
         block_widths = extended_block_sizes
         num_filters = sum(extended_block_sizes)
 
         # Initial layers:
-        in_shape = list(map(int, tf.shape(inputs)))
+        input_blocks = [1]+input_shape[-1]*[1]
+        # Recall that the first block was added to distinguish padding; there's
+        # no need to mask it.
+        lf_diag_mask = [True] + [False] * (len(block_widths) - 1)
         lf_list = [nn.masked_shift_conv_2D(
                 inputs,
-                block_heights = in_shape[-1]*[1],
+                block_heights = input_blocks,
                 block_widths = block_widths,
                 kernel_size = (3, 3),
                 strides = (1, 1),
-                include_diagonals = False,
-                mask_type="matrix"
+                include_diagonals = lf_diag_mask,
+                mask_type = "matrix"
         )]
         u_list = [nn.shift_layer(nn.masked_shift_conv_2D(
             inputs,
-            block_heights = in_shape[-1]*[1],
+            block_heights = input_blocks,
             block_widths = block_widths,
             num_filters = num_filters,
             kernel_size = (2, 3),
@@ -68,11 +78,11 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
         ), y_shift = 1)]
         m_list = [nn.masked_shift_conv_2D(
                 inputs,
-                block_heights = in_shape[-1]*[1],
+                block_heights = input_blocks,
                 block_widths = block_widths,
                 kernel_size = (3, 3),
                 strides = (1, 1),
-                include_diagonals = False,
+                include_diagonals = lf_diag_mask,
                 mask_type="tensor"
             )]
 
@@ -159,14 +169,14 @@ def model(inputs, labels, avg_num_filters, num_layers, num_resnet=1, compression
                 )
                 u = nn.masked_gated_resnet(
                     u,
-                    masked_a_list= [lf,u_list.pop()],
+                    masked_a_list= [u_list.pop(), lf],
                     dropout_p = dropout_p,
                     block_sizes = extended_block_sizes,
                     conv = masked_down_shifted_conv2d
                 )
                 ml = nn.masked_gated_resnet(
                     ml,
-                    masked_a_list= [lf, u, m_list.pop()],
+                    masked_a_list= [m_list.pop(), u, lf],
                     block_sizes = extended_block_sizes,
                     dropout_p = dropout_p,
                     conv = tensor_masked_conv2d

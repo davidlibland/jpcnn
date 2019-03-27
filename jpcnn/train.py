@@ -11,6 +11,7 @@ from jpcnn.dct_utils import (
     flat_compress, flat_reconstruct, basic_compression,
     mean_inv_compression,
     capped_mean_loss,
+    get_block_sizes,
 )
 from jpcnn.file_utils import (
     build_checkpoint_file_name,
@@ -28,23 +29,24 @@ from jpcnn.nn import (
 )
 
 
-def generate_and_save_images(model, epoch, test_input, container, root_dir, compression, mixtures_per_channel, display_images=False, one_hot_sample_labels: np.ndarray=None):
+def generate_and_save_images(model, epoch, test_input, container, root_dir, num_blocks, image_processors, mixtures_per_channel, display_images=False, one_hot_sample_labels: np.ndarray=None):
     height = test_input.shape[1]
     width = test_input.shape[2]
     channels = test_input.shape[-1]
-    num_frequencies = np.array(compression).size
-    chan_per_freq = channels//num_frequencies
-    assert channels == chan_per_freq * num_frequencies
+    chan_per_block = channels//num_blocks
+    compressor = image_processors[0]
+    reconstructor = image_processors[1]
+    assert channels == chan_per_block * num_blocks
     predictions = np.zeros_like(test_input)
     cap_adjustments = []
     if one_hot_sample_labels is not None:
         sample_labels = np.argmax(one_hot_sample_labels, axis = 1)
     else:
         sample_labels = None
-    for k in range(num_frequencies):
+    for k in range(num_blocks):
         for j in range(height):
             for i in range(width):
-                chan_end = (k + 1) * chan_per_freq
+                chan_end = (k + 1) * chan_per_block
                 block_end = chan_end * mixtures_per_channel * 3
 
                 with container.as_default():
@@ -55,10 +57,10 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
                 predictions[:,j,i, :chan_end] = ijk_sample
 
                 # crop values to [-1,1] interval:
-                reconstruction = flat_reconstruct(predictions, compression)
+                reconstruction = reconstructor(predictions)
                 capped_sample = tf.maximum(tf.minimum(reconstruction, 1), -1)
-                recompression = flat_compress(capped_sample, compression)
-                chan_start = k * chan_per_freq
+                recompression = compressor(capped_sample)
+                chan_start = k * chan_per_block
                 cap_adjustments.append(float(tf.reduce_max(
                     tf.abs(predictions[:,j,i,chan_start: chan_end]
                     - recompression[:, j, i, chan_start: chan_end])
@@ -66,20 +68,24 @@ def generate_and_save_images(model, epoch, test_input, container, root_dir, comp
                 predictions[:,j,i, : chan_end] = recompression[:, j, i, : chan_end]
 
     print("Cap adjustment: %s" % max(cap_adjustments))
-    decompressed_images = flat_reconstruct(predictions, compression)[:, :, :, 0]
+    decompressed_images = reconstructor(predictions)[:, :, :, 0]
     normalized_images = (decompressed_images + 1)/2  # normalize to [0,1]
+    print("image bounds: %s to %s" % (tf.reduce_min(normalized_images), tf.reduce_max(normalized_images)))
     save_and_display_images(root_dir, 'image_at_epoch_{:04d}.png'.format(epoch),
                             normalized_images, display = display_images,
                             sample_labels=sample_labels)
 
 
-def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, access_token=None, num_steps=None):
+def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, access_token=None, num_steps=None, image_processors=None):
     rng = np.random.RandomState(conf.seed)
     noise = rng.beta(1,1,[16, conf.image_dim, conf.image_dim, 1]).astype("float32")
-    noise = image_processors(conf.compression)[0](noise)
+    noise = image_processors[0](noise)
     sample_labels = None
     optimizer = tf.train.AdamOptimizer(conf.lr)
     container = tf.contrib.eager.EagerVariableStore()
+    block_sizes = get_block_sizes(conf.avg_num_filters, conf.compression)
+    if conf.frequencies_to_clip:
+        block_sizes = block_sizes[:-conf.frequencies_to_clip]
 
     conf, dir_name, do_sync = load_or_save_conf(ckpt_file, conf, access_token)
     summary_writer = tf.contrib.summary.create_file_writer("{}/logs".format(dir_name), flush_millis = 10000)
@@ -96,16 +102,14 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         with container.as_default():
             image_var = tf.contrib.eager.Variable(images)
             model(image_var, labels, training = True, num_layers = conf.num_layers,
-                  avg_num_filters = conf.avg_num_filters, num_resnet = conf.num_resnet,
+                  block_sizes = block_sizes, num_resnet = conf.num_resnet,
                   mixtures_per_channel = conf.mixtures_per_channel,
-                  init = True, compression = conf.compression)
+                  init = True)
         # pull sample labels:
         if i == 0 :
             if labels is not None:
                 sample_labels = labels[:16]
-            if ckpt_file is not None:
-                #  skip the initialization
-                break
+            break
 
     global_step = tf.train.get_or_create_global_step()
     saver = tf.train.Saver(
@@ -134,9 +138,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 logits = model(image_var, labels,
                                training = True,
                                num_layers=conf.num_layers,
-                               avg_num_filters=conf.avg_num_filters,
+                               block_sizes=block_sizes,
                                num_resnet=conf.num_resnet,
-                               compression = conf.compression,
                                mixtures_per_channel = conf.mixtures_per_channel)
 
                 loss = tf.reduce_mean(discretized_mix_logistic_loss(
@@ -144,11 +147,12 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 )
                 # Prior for means to be near zero,
                 # downweighted as the loss decreases
-                capped_loss = capped_mean_loss(
-                    logits, conf.compression,
-                    [conf.mixtures_per_channel] * im_shape[-1],
-                    0.001*tf.sqrt(prev_loss)
-                )
+                # capped_loss = capped_mean_loss(
+                #     logits, conf.compression,
+                #     [conf.mixtures_per_channel] * im_shape[-1],
+                #     0.001*tf.sqrt(prev_loss)
+                # )
+                capped_loss = 0
                 rescaled_loss = mean_inv_compression(conf.compression) * loss
                 assert_finite(loss)
                 training_loss = loss+capped_loss
@@ -165,7 +169,17 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
                 training_loss,
                 container.trainable_variables()
             )
-
+            # gradients = [tf.clip_by_norm(g, 1e3) for g in gradients]
+            large_grads = []
+            for grd, var in zip(gradients, container.trainable_variables()):
+                if tf.reduce_any(tf.abs(grd) > 1e4):
+                    large_grads.append((tf.reduce_max(tf.abs(grd)), var.name))
+                    # print("large gradient!")
+                    # print(tf.reduce_max(tf.abs(grd)), var.name)
+                    # print(tf.argmax(tf.abs(grd)), var.name)
+            if large_grads:
+                for val, name in large_grads:
+                    print("large gradient: %s, %s" % (name, float(val)))
             optimizer.apply_gradients(
                 zip(gradients, container.trainable_variables())
             )
@@ -189,17 +203,17 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
             # display.clear_output(wait=True)
             generate_and_save_images(
                 lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
-                                   avg_num_filters=conf.avg_num_filters,
+                                   block_sizes=block_sizes,
                                    num_resnet=conf.num_resnet,
-                                   compression=conf.compression,
                                    mixtures_per_channel = conf.mixtures_per_channel,
                                    training=False),
                 int(global_step),
                 noise,
                 container,
                 dir_name,
-                conf.compression,
-                conf.mixtures_per_channel,
+                num_blocks=len(block_sizes),
+                image_processors=image_processors,
+                mixtures_per_channel=conf.mixtures_per_channel,
                 display_images = conf.display_images,
                 one_hot_sample_labels=sample_labels
             )
@@ -223,9 +237,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
 
                     logits = model(image_var, test_labels, training = False,
                                              num_layers=conf.num_layers,
-                                             avg_num_filters=conf.avg_num_filters,
+                                             block_sizes=block_sizes,
                                              num_resnet=conf.num_resnet,
-                                             compression=conf.compression,
                                              mixtures_per_channel =
                                              conf.mixtures_per_channel)
 
@@ -252,9 +265,8 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
     # display.clear_output(wait = True)
     generate_and_save_images(
         lambda pred: model(pred, sample_labels, num_layers=conf.num_layers,
-                           avg_num_filters=conf.avg_num_filters,
+                           block_sizes=block_sizes,
                            num_resnet=conf.num_resnet,
-                           compression=conf.compression,
                            mixtures_per_channel =
                            conf.mixtures_per_channel,
                            training=False),
@@ -262,25 +274,34 @@ def train(train_dataset, val_dataset, conf: JPCNNConfig, ckpt_file: str=None, ac
         noise, 
         container,
         dir_name,
-        conf.compression,
-        conf.mixtures_per_channel,
+        num_blocks=len(block_sizes),
+        image_processors=image_processors,
+        mixtures_per_channel=conf.mixtures_per_channel,
         display_images = conf.display_images,
         one_hot_sample_labels=sample_labels
     )
 
 
-def image_processors(compression):
+def get_image_processors(compression, num_clip=None):
     def compressor(im):
-        return flat_compress(im, compression)
+        compressed = flat_compress(im, compression)
+        if num_clip:
+            return compressed[:,:,:,:-num_clip]
+        return compressed
     def reconstructor(c_im):
+        if num_clip:
+            c_im_shape = get_shape_as_list(c_im)
+            c_im = tf.concat([c_im, tf.zeros(c_im_shape[:3]+[num_clip])], axis=3)
         return flat_reconstruct(c_im, compression)
     return compressor, reconstructor
 
 if __name__ == "__main__":
     compression = basic_compression(.1, 1., [7, 7])
+    frequencies_to_clip = 20
+    image_processors = get_image_processors(compression, frequencies_to_clip)
     full_dataset, image_dim, buffer_size = get_dataset(
         basic_test_data = False,
-        image_processors = image_processors(compression)
+        image_processors = image_processors
     )
     num_test_elements = buffer_size//BATCH_SIZE//5
     print("Training Set Size: %s" % (buffer_size - num_test_elements * BATCH_SIZE))
@@ -292,6 +313,11 @@ if __name__ == "__main__":
         dropbox_access_token = sys.argv[1]
         print("Access Token: %s" % dropbox_access_token)
     conf = JPCNNConfig(image_dim=image_dim, compression=compression,
-                               seed=seed, num_test_elements=num_test_elements)
-    train(train_dataset, val_dataset, conf, access_token = dropbox_access_token, num_steps=buffer_size//BATCH_SIZE)
-    # train(train_dataset, val_dataset, conf, ckpt_file = "Checkpoint-20190318-133157/params_mnist-freq-last.ckpt-2", access_token = dropbox_access_token, num_steps=buffer_size//BATCH_SIZE)
+                       seed=seed, num_test_elements=num_test_elements,
+                       frequencies_to_clip=frequencies_to_clip)
+    train(train_dataset, val_dataset, conf, access_token = dropbox_access_token,
+          num_steps=buffer_size//BATCH_SIZE, image_processors=image_processors)
+    # train(train_dataset, val_dataset, conf,
+    # ckpt_file = "Checkpoint-20190318-133157/params_mnist-freq-last.ckpt-2",
+    # access_token = dropbox_access_token,
+    # num_steps=buffer_size//BATCH_SIZE, image_processors=image_processors)

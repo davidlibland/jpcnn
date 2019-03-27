@@ -86,22 +86,31 @@ def masked_conv_layer(x, block_heights, block_widths, kernel_size, strides, pad=
         assert_finite(x)
         if init:  # normalize x
             m_init, v_init = tf.nn.moments(x, [0,1,2])
-            safe_v_init = tf.where(
-                tf.equal(0, v_init),  # masked entries will always be zero.
-                tf.ones_like(v_init),
-                v_init
-            )
-            scale_init = init_scale / tf.sqrt(safe_v_init + 1e-10)
+            if tf.reduce_any(tf.abs(v_init) <= 1e-8):
+                v_zeros = tf.abs(v_init) <= 1e-8
+                zero_indices = tf.where(v_zeros)
+                print("zero %s: %s" % (name, zero_indices))
+            scale_init = init_scale / tf.sqrt(v_init + 1e-10)
+            # scale_init = tf.where(
+            #     tf.equal(0, tf.reduce_sum(M, axis=[0,1,2])),  # masked entries will always be zero.
+            #     tf.ones_like(scale_init),
+            #     scale_init
+            # )
             with tf.control_dependencies([g.assign(g * scale_init), b.assign_add(-m_init * scale_init)]):
                 x = tf.identity(x)
+                # x = tf.where(
+                #     tf.broadcast_to(tf.equal(0, tf.reduce_sum(M, axis=[0,1,2]))
+                #     [tf.newaxis, tf.newaxis, tf.newaxis, :], x.shape),  # masked entries will always be zero.
+                #     tf.random.normal(x.shape),  # add some noise.
+                #     x
+                # )
                 assert_finite(scale_init)
                 assert_finite(g)
-
 
         if nonlinearity is not None:
             x = nonlinearity(x)
         else:
-            x = tf.nn.leaky_relu(x)
+            x = tf.nn.elu(x)
         return x
 
 
@@ -134,19 +143,23 @@ def masked_deconv_layer(x, block_heights, block_widths, kernel_size, strides, pa
 
         if init:  # normalize x
             m_init, v_init = tf.nn.moments(x, [0,1,2])
-            safe_v_init = tf.where(
-                tf.equal(0, v_init),  # masked entries will always be zero.
-                tf.ones_like(v_init),
-                v_init
-            )
-            scale_init = init_scale / tf.sqrt(safe_v_init + 1e-10)
+            if tf.reduce_any(tf.abs(v_init) <= 1e-8):
+                v_zeros = tf.abs(v_init) <= 1e-8
+                zero_indices = tf.where(v_zeros)
+                print("zero %s: %s" % (name, zero_indices))
+            scale_init = init_scale / tf.sqrt(v_init + 1e-10)
+            # scale_init = tf.where(
+            #     tf.equal(0, tf.reduce_sum(M, axis=[0,1,2])),  # masked entries will always be zero.
+            #     tf.ones_like(scale_init),
+            #     scale_init
+            # )
             with tf.control_dependencies([g.assign(g * scale_init), b.assign_add(-m_init * scale_init)]):
                 x = tf.identity(x)
 
         if nonlinearity is not None:
             x = nonlinearity(x)
         else:
-            x = tf.nn.leaky_relu(x)
+            x = tf.nn.elu(x)
         return x
 
 
@@ -176,7 +189,7 @@ def conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=No
         if nonlinearity is not None:
             x = nonlinearity(x)
         else:
-            x = tf.nn.leaky_relu(x)
+            x = tf.nn.elu(x)
         return x
 
 
@@ -209,7 +222,7 @@ def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=
         if nonlinearity is not None:
             x = nonlinearity(x)
         else:
-            x = tf.nn.leaky_relu(x)
+            x = tf.nn.elu(x)
         return x
 
 
@@ -235,12 +248,16 @@ def masked_dense_layer(x, block_heights, block_widths, nonlinearity=None, counte
 
         if init:  # normalize x
             m_init, v_init = tf.nn.moments(x, [0])
-            safe_v_init = tf.where(
-                tf.equal(0, v_init),  # masked entries will always be zero.
-                tf.ones_like(v_init),
-                v_init
-            )
-            scale_init = init_scale/tf.sqrt(safe_v_init + 1e-10)
+            if tf.reduce_any(tf.abs(v_init) <= 1e-8):
+                v_zeros = tf.abs(v_init) <= 1e-8
+                zero_indices = tf.where(v_zeros)
+                print("zero %s: %s" % (name, zero_indices))
+            scale_init = init_scale/tf.sqrt(v_init + 1e-10)
+            # scale_init = tf.where(
+            #     tf.equal(0, tf.reduce_sum(M, axis=0)),  # masked entries will always be zero.
+            #     tf.ones_like(scale_init),
+            #     scale_init
+            # )
             with tf.control_dependencies([g.assign(g*scale_init), b.assign_add(-m_init*scale_init)]):
                 x = tf.identity(x)
 
@@ -309,7 +326,7 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
 
 
 @add_arg_scope
-def masked_gated_resnet(x, a=None, masked_a_list=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, block_sizes=None, **kwargs):
+def masked_gated_resnet(x, a=None, masked_a_list=None, nonlinearity=tf.nn.elu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, block_sizes=None, **kwargs):
     x_shape = get_shape_as_list(x)
     if block_sizes is None:
         # Assume there is a single block.
@@ -345,7 +362,7 @@ def masked_gated_resnet(x, a=None, masked_a_list=None, nonlinearity=tf.nn.leaky_
     return x + y3
 
 @add_arg_scope
-def gated_resnet(x, a=None, nonlinearity=tf.nn.leaky_relu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, **kwargs):
+def gated_resnet(x, a=None, nonlinearity=tf.nn.elu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, **kwargs):
     x_shape = get_shape_as_list(x)
     num_filters = x_shape[-1]
 
@@ -464,7 +481,7 @@ def shift_deconv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=Non
 
 
 @add_arg_scope
-def masked_skip_layer(x, y, block_heights, block_widths, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, dropout_p=0.9, **kwargs):
+def masked_skip_layer(x, y, block_heights, block_widths, nonlinearity=tf.nn.elu, counters=None, init=False, dropout_p=0.9, **kwargs):
     if nonlinearity is not None:
         x = nonlinearity(x)
     c2 = masked_nin_layer(y, block_heights=block_heights, block_widths=block_widths, nonlinearity=nonlinearity)
@@ -473,7 +490,7 @@ def masked_skip_layer(x, y, block_heights, block_widths, nonlinearity=tf.nn.leak
 
 
 @add_arg_scope
-def skip_layer(x, y, nonlinearity=tf.nn.leaky_relu, counters=None, init=False, dropout_p=0.9, **kwargs):
+def skip_layer(x, y, nonlinearity=tf.nn.elu, counters=None, init=False, dropout_p=0.9, **kwargs):
     if nonlinearity is not None:
         x = nonlinearity(x)
     xshape = get_shape_as_list(x)
@@ -639,6 +656,12 @@ def get_block_triangular_mask(block_heights, block_widths, include_diagonals=Tru
     shape = lambda i, j: [block_heights[i], block_widths[j]]
     ones = lambda i, j: np.ones(shape(i, j))
     zeros = lambda i, j: np.zeros(shape(i, j))
+    if isinstance(include_diagonals, list):
+        return tf.constant(np.block(
+            [[ones(i,j) if i<j else
+              ones(i,j) if i==j and include_diagonals[i]
+              else zeros(i,j) for j in range(num_blocks)]
+             for i in range(num_blocks)]), dtype=dtype)
     if include_diagonals:
         return tf.constant(np.block(
             [[ones(i,j) if i<=j else zeros(i,j) for j in range(num_blocks)]
@@ -658,7 +681,16 @@ def get_block_triangular_tensor_mask(kernel_size, block_heights, block_widths, i
     shape = lambda i, j: [1,1,block_heights[i], block_widths[j]]
     ones = lambda i, j: np.ones(shape(i, j))
     zeros = lambda i, j: np.zeros(shape(i, j))
-    if include_diagonals:
+    if isinstance(include_diagonals, list):
+        def valid_cond(h,w,i,j):
+            if i < j or (i==j and include_diagonals[i]):
+                return True
+            if i == j and h < kernel_size[1] // 2:
+                return True
+            if i == j and h == kernel_size[1] // 2 and w < kernel_size[0] //2:
+                return True
+            return False
+    elif include_diagonals:
         def valid_cond(h,w,i,j):
             if i < j:
                 return True
@@ -686,5 +718,5 @@ def get_block_triangular_tensor_mask(kernel_size, block_heights, block_widths, i
     ), dtype=dtype)
 
 def assert_finite(x):
-    # pass
-    assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
+    pass
+    # assert tf.reduce_all(tf.is_finite(x)), "Non finite tensor: %s" % x
