@@ -76,7 +76,7 @@ def get_dataset(batch_size = BATCH_SIZE, image_processors=None, basic_test_data 
     save_and_display_images(".", "compressed_training_sample.png", image_processors[1](all_images[:16, :, :, :])[:16, :, :, 0])
 
     if train_labels is not None:
-        one_hot_labels = tf.one_hot(train_labels, max(train_labels))
+        one_hot_labels = tf.one_hot(train_labels, 10)
         dataset = tf.data.Dataset.from_tensor_slices((all_images, one_hot_labels)) \
             .shuffle(buffer_size) \
             .batch(batch_size)
