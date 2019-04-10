@@ -4,7 +4,7 @@ import numpy as np
 from jpcnn.image_utils import save_and_display_images
 
 # Globals:
-BATCH_SIZE = 256
+BATCH_SIZE = 32
 
 # Horizontal white line: nl=1, nr=1, nf=50, lr=1e-2
 test_data = np.concatenate([np.zeros([3,4], dtype=np.float32), np.ones([1,4], dtype=np.float32)], axis = 0)
