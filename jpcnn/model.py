@@ -39,7 +39,7 @@ def model(inputs, labels, num_layers, num_resnet=1, block_sizes=None, mixtures_p
 
     with arg_scope(arg_scope_layers, counters=counters, init=init, labels=labels):
         # add channel of ones to distinguish image from padding later on
-        input_shape = list(map(int, tf.shape(inputs)))
+        input_shape = list(map(int, inputs.shape))
         inputs = tf.pad(inputs, [[0,0],[0,0],[0,0],[1,0]], "CONSTANT", constant_values=1)
         # height_pos = tf.linspace(1., 2., input_shape[1])
         # height_pos = tf.random.normal(shape=[input_shape[1]])
@@ -48,16 +48,16 @@ def model(inputs, labels, num_layers, num_resnet=1, block_sizes=None, mixtures_p
         # width_pos = tf.random.normal(shape=[input_shape[2]])
         # width_pos = tf.broadcast_to(tf.reshape(width_pos, [1, 1, -1, 1]), input_shape[:-1] + [1])
         # inputs = tf.concat([height_pos, width_pos, inputs], axis=3)
-        extended_block_sizes = [1] + block_sizes  # add extra block for the channel of ones.
-        block_heights = extended_block_sizes
-        block_widths = extended_block_sizes
+        extended_block_sizes = tuple([1] + block_sizes)  # add extra block for the channel of ones.
+        block_heights = tuple(extended_block_sizes)
+        block_widths = tuple(extended_block_sizes)
         num_filters = sum(extended_block_sizes)
 
         # Initial layers:
-        input_blocks = [1]+input_shape[-1]*[1]
+        input_blocks = tuple([1]+input_shape[-1]*[1])
         # Recall that the first block was added to distinguish padding; there's
         # no need to mask it.
-        lf_diag_mask = [True] + [False] * (len(block_widths) - 1)
+        lf_diag_mask = tuple([True] + [False] * (len(block_widths) - 1))
         lf_list = [nn.masked_shift_conv_2D(
                 inputs,
                 block_heights = input_blocks,
@@ -217,7 +217,7 @@ def model(inputs, labels, num_layers, num_resnet=1, block_sizes=None, mixtures_p
         assert len(lf_list) == 0, "All lf layers should be connected."
         assert len(m_list) == 0, "All ml layers should be connected."
         # Each mixture should have 3 params,
-        final_block_widths = [0] + [ 3 * mixtures_per_channel for _ in block_sizes]
+        final_block_widths = tuple([0] + [ 3 * mixtures_per_channel for _ in block_sizes])
         logits = nn.masked_nin_layer(
             ml,
             block_heights = block_heights,

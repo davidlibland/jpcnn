@@ -280,7 +280,7 @@ def get_image_processors(compression, num_clip=None):
 
 if __name__ == "__main__":
     compression = basic_compression(.1, 1., [7, 7])
-    frequencies_to_clip = 20
+    frequencies_to_clip = 21
     image_processors = get_image_processors(compression, frequencies_to_clip)
     full_dataset, image_dim, buffer_size = get_dataset(
         basic_test_data = False,

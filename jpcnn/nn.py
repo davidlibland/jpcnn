@@ -1,7 +1,10 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.framework.python.ops import add_arg_scope
+from toolz import memoize
 
+
+nonlin = tf.identity
 
 def get_name(layer_name: str, counters: dict):
     """ utlity for keeping track of layer names """
@@ -17,13 +20,10 @@ def get_name(layer_name: str, counters: dict):
 def get_shape_as_list(x):
     """Returns the shape of the tensor as a list of ints."""
     try:
-        name = x.name
-    except Exception as e:
-        name = "missing_name"
-    shape = list(map(int, tf.shape(x)))
-    desc = "Shape: {}, Name: {}, Type: {}".format(shape, name, type(x))
-    # print(desc)
-    return shape
+        # assume it's a tensor
+        return list(map(int, x.shape))
+    except AttributeError:
+        return list(np.array(x).shape)
 
 
 @add_arg_scope
@@ -110,7 +110,7 @@ def masked_conv_layer(x, block_heights, block_widths, kernel_size, strides, pad=
         if nonlinearity is not None:
             x = nonlinearity(x)
         else:
-            x = tf.nn.elu(x)
+            x = nonlin(x)
         return x
 
 
@@ -159,7 +159,7 @@ def masked_deconv_layer(x, block_heights, block_widths, kernel_size, strides, pa
         if nonlinearity is not None:
             x = nonlinearity(x)
         else:
-            x = tf.nn.elu(x)
+            x = nonlin(x)
         return x
 
 
@@ -189,7 +189,7 @@ def conv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=No
         if nonlinearity is not None:
             x = nonlinearity(x)
         else:
-            x = tf.nn.elu(x)
+            x = nonlin(x)
         return x
 
 
@@ -222,7 +222,7 @@ def deconv_layer(x, num_filters, kernel_size, strides, pad="SAME", nonlinearity=
         if nonlinearity is not None:
             x = nonlinearity(x)
         else:
-            x = tf.nn.elu(x)
+            x = nonlin(x)
         return x
 
 
@@ -326,7 +326,7 @@ def batch_normalization(x, training=True, counters=None, bn_epsilon=1e-3, init=F
 
 
 @add_arg_scope
-def masked_gated_resnet(x, a=None, masked_a_list=None, nonlinearity=tf.nn.elu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, block_sizes=None, **kwargs):
+def masked_gated_resnet(x, a=None, masked_a_list=None, nonlinearity=nonlin, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, block_sizes=None, **kwargs):
     x_shape = get_shape_as_list(x)
     if block_sizes is None:
         # Assume there is a single block.
@@ -362,7 +362,7 @@ def masked_gated_resnet(x, a=None, masked_a_list=None, nonlinearity=tf.nn.elu, c
     return x + y3
 
 @add_arg_scope
-def gated_resnet(x, a=None, nonlinearity=tf.nn.elu, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, **kwargs):
+def gated_resnet(x, a=None, nonlinearity=nonlin, conv=conv_layer, dropout_p=0.9, counters=None, labels=None, init=False, **kwargs):
     x_shape = get_shape_as_list(x)
     num_filters = x_shape[-1]
 
@@ -481,7 +481,7 @@ def shift_deconv_2D(x, num_filters, kernel_size, strides=(1, 1), shift_types=Non
 
 
 @add_arg_scope
-def masked_skip_layer(x, y, block_heights, block_widths, nonlinearity=tf.nn.elu, counters=None, init=False, dropout_p=0.9, **kwargs):
+def masked_skip_layer(x, y, block_heights, block_widths, nonlinearity=nonlin, counters=None, init=False, dropout_p=0.9, **kwargs):
     if nonlinearity is not None:
         x = nonlinearity(x)
     c2 = masked_nin_layer(y, block_heights=block_heights, block_widths=block_widths, nonlinearity=nonlinearity)
@@ -490,7 +490,7 @@ def masked_skip_layer(x, y, block_heights, block_widths, nonlinearity=tf.nn.elu,
 
 
 @add_arg_scope
-def skip_layer(x, y, nonlinearity=tf.nn.elu, counters=None, init=False, dropout_p=0.9, **kwargs):
+def skip_layer(x, y, nonlinearity=nonlin, counters=None, init=False, dropout_p=0.9, **kwargs):
     if nonlinearity is not None:
         x = nonlinearity(x)
     xshape = get_shape_as_list(x)
@@ -646,7 +646,7 @@ def log_expm1(x):
 
 
 # Helpers:
-
+@memoize
 def get_block_triangular_mask(block_heights, block_widths, include_diagonals=True, triangular_type="upper", dtype=tf.float32):
     """Assumes that shape is 2-dim"""
     assert len(block_heights) == len(block_widths), "An equal number of heights and widths must be given."
@@ -656,7 +656,7 @@ def get_block_triangular_mask(block_heights, block_widths, include_diagonals=Tru
     shape = lambda i, j: [block_heights[i], block_widths[j]]
     ones = lambda i, j: np.ones(shape(i, j))
     zeros = lambda i, j: np.zeros(shape(i, j))
-    if isinstance(include_diagonals, list):
+    if isinstance(include_diagonals, tuple):
         return tf.constant(np.block(
             [[ones(i,j) if i<j else
               ones(i,j) if i==j and include_diagonals[i]
@@ -672,6 +672,7 @@ def get_block_triangular_mask(block_heights, block_widths, include_diagonals=Tru
         dtype=dtype)
 
 
+@memoize
 def get_block_triangular_tensor_mask(kernel_size, block_heights, block_widths, include_diagonals=True, triangular_type="upper", dtype=tf.float32):
     """Assumes that shape is 2-dim"""
     assert len(block_heights) == len(block_widths), "An equal number of heights and widths must be given."
@@ -681,7 +682,7 @@ def get_block_triangular_tensor_mask(kernel_size, block_heights, block_widths, i
     shape = lambda i, j: [1,1,block_heights[i], block_widths[j]]
     ones = lambda i, j: np.ones(shape(i, j))
     zeros = lambda i, j: np.zeros(shape(i, j))
-    if isinstance(include_diagonals, list):
+    if isinstance(include_diagonals, tuple):
         def valid_cond(h,w,i,j):
             if i < j or (i==j and include_diagonals[i]):
                 return True
